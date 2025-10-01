@@ -1,0 +1,45 @@
+{
+  "name": "@superfly/sprites",
+  "version": "0.1.0",
+  "description": "JavaScript/TypeScript SDK for Sprites - remote command execution",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "test": "npm run build && node --test dist/**/*.test.js",
+    "test:unit": "npm run build && node --test dist/exec.test.js",
+    "test:integration": "npm run build && node --test dist/integration.test.js",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "sprites",
+    "exec",
+    "remote",
+    "command",
+    "websocket",
+    "child_process"
+  ],
+  "author": "Fly.io",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/superfly/sprites-js.git"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.0"
+  }
+}
+

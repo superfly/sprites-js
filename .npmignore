@@ -1,0 +1,8 @@
+src/
+tsconfig.json
+test-node-cli/
+*.md
+!README.md
+IMPLEMENTATION_PLAN.md
+PROGRESS.md
+
