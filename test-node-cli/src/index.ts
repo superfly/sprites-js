@@ -273,7 +273,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    const sprite = client.sprite(options.sprite);
+    const sprite = await client.sprite(options.sprite);
 
     logger.logEvent('command_start', {
       sprite: options.sprite,

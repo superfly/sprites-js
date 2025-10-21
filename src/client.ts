@@ -3,6 +3,8 @@
  */
 
 import { Sprite } from './sprite.js';
+import { EndpointAPI } from './endpoint_api.js';
+import { ControlAPI } from './control_api.js';
 import type {
   ClientOptions,
   SpriteConfig,
@@ -28,10 +30,40 @@ export class SpritesClient {
   }
 
   /**
-   * Get a handle to a sprite (doesn't create it on the server)
+   * Get a handle to a sprite and select the appropriate API by probing /control.
+   * - 502: sprite does not exist (throws)
+   * - 404: sprite exists but cannot serve control (use EndpointAPI)
+   * - otherwise: assume control is available (use ControlAPI)
    */
-  sprite(name: string): Sprite {
-    return new Sprite(name, this);
+  async sprite(name: string): Promise<Sprite> {
+    const sprite = new Sprite(name, this);
+
+    try {
+      const fetchFn: any = (globalThis as any).fetch;
+      const AbortSignalAny: any = (globalThis as any).AbortSignal;
+      const url = `${this.baseURL}/v1/sprites/${name}/control`;
+      const resp = await fetchFn(url, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${this.token}` },
+        signal: AbortSignalAny.timeout(5000),
+      });
+
+      if (resp.status === 502) {
+        throw new Error(`Sprite not found: ${name}`);
+      }
+
+      if (resp.status === 404) {
+        sprite.setAPI(new EndpointAPI());
+        return sprite;
+      }
+
+      sprite.setAPI(new ControlAPI(sprite));
+      return sprite;
+    } catch (e) {
+      // On network or unexpected errors, fall back to EndpointAPI to remain usable
+      sprite.setAPI(new EndpointAPI());
+      return sprite;
+    }
   }
 
   /**
@@ -47,7 +79,7 @@ export class SpritesClient {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(request),
-      signal: AbortSignal.timeout(120000), // 2 minute timeout for creation
+      signal: (globalThis as any).AbortSignal.timeout(120000), // 2 minute timeout for creation
     });
 
     if (!response.ok) {
@@ -68,7 +100,7 @@ export class SpritesClient {
       headers: {
         'Authorization': `Bearer ${this.token}`,
       },
-      signal: AbortSignal.timeout(this.timeout),
+      signal: (globalThis as any).AbortSignal.timeout(this.timeout),
     });
 
     if (response.status === 404) {
@@ -90,7 +122,8 @@ export class SpritesClient {
    * List sprites with optional filtering and pagination
    */
   async listSprites(options: ListOptions = {}): Promise<SpriteList> {
-    const params = new URLSearchParams();
+    const URLSearchParamsCtor: any = (globalThis as any).URLSearchParams || (globalThis as any).URLSearchParams;
+    const params = new URLSearchParamsCtor();
     if (options.maxResults) params.set('max_results', options.maxResults.toString());
     if (options.continuationToken) params.set('continuation_token', options.continuationToken);
     if (options.prefix) params.set('prefix', options.prefix);
@@ -101,7 +134,7 @@ export class SpritesClient {
       headers: {
         'Authorization': `Bearer ${this.token}`,
       },
-      signal: AbortSignal.timeout(this.timeout),
+      signal: (globalThis as any).AbortSignal.timeout(this.timeout),
     });
 
     if (!response.ok) {
@@ -147,7 +180,7 @@ export class SpritesClient {
       headers: {
         'Authorization': `Bearer ${this.token}`,
       },
-      signal: AbortSignal.timeout(this.timeout),
+      signal: (globalThis as any).AbortSignal.timeout(this.timeout),
     });
 
     if (!response.ok && response.status !== 204) {
@@ -165,7 +198,7 @@ export class SpritesClient {
       headers: {
         'Authorization': `Bearer ${this.token}`,
       },
-      signal: AbortSignal.timeout(60000),
+      signal: (globalThis as any).AbortSignal.timeout(60000),
     });
 
     if (!response.ok && response.status !== 204) {
@@ -193,14 +226,15 @@ export class SpritesClient {
       body.invite_code = inviteCode;
     }
 
-    const response = await fetch(url, {
+    const fetchFn: any = (globalThis as any).fetch;
+    const response = await fetchFn(url, {
       method: 'POST',
       headers: {
         'Authorization': `FlyV1 ${flyMacaroon}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30000),
+      signal: (globalThis as any).AbortSignal.timeout(30000),
     });
 
     if (!response.ok) {
@@ -219,9 +253,10 @@ export class SpritesClient {
   /**
    * Wrapper around fetch for consistent error handling
    */
-  private async fetch(url: string, init?: RequestInit): Promise<Response> {
+  private async fetch(url: string, init?: any): Promise<any> {
     try {
-      return await fetch(url, init);
+      const fetchFn: any = (globalThis as any).fetch;
+      return await fetchFn(url, init);
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`Network error: ${error.message}`);

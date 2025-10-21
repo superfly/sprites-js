@@ -68,7 +68,7 @@ describe('Sprite Lifecycle', { skip: skipTests }, () => {
 
   describe('Exec Commands', () => {
     it('should execute echo command', async () => {
-      const sprite = client.sprite(spriteName);
+      const sprite = await client.sprite(spriteName);
       const { stdout } = await sprite.exec('echo hello world');
       
       assert.strictEqual(stdout, 'hello world\n');
@@ -76,7 +76,7 @@ describe('Sprite Lifecycle', { skip: skipTests }, () => {
     });
 
     it('should execute pwd command', async () => {
-      const sprite = client.sprite(spriteName);
+      const sprite = await client.sprite(spriteName);
       const { stdout } = await sprite.exec('pwd');
       
       // Should be in home directory
@@ -85,7 +85,7 @@ describe('Sprite Lifecycle', { skip: skipTests }, () => {
     });
 
     it('should execute command with environment variables', async () => {
-      const sprite = client.sprite(spriteName);
+      const sprite = await client.sprite(spriteName);
       const { stdout } = await sprite.exec('env', {
         env: {
           TEST_VAR: 'hello',
@@ -100,7 +100,7 @@ describe('Sprite Lifecycle', { skip: skipTests }, () => {
     });
 
     it('should execute command with working directory', async () => {
-      const sprite = client.sprite(spriteName);
+      const sprite = await client.sprite(spriteName);
       const { stdout } = await sprite.exec('pwd', { cwd: '/tmp' });
       
       assert.strictEqual(stdout, '/tmp\n');
@@ -108,7 +108,7 @@ describe('Sprite Lifecycle', { skip: skipTests }, () => {
     });
 
     it('should handle command with non-zero exit code', async () => {
-      const sprite = client.sprite(spriteName);
+      const sprite = await client.sprite(spriteName);
       
       try {
         await sprite.execFile('sh', ['-c', 'exit 42']);
@@ -121,7 +121,7 @@ describe('Sprite Lifecycle', { skip: skipTests }, () => {
     });
 
     it('should handle command with pipes', async () => {
-      const sprite = client.sprite(spriteName);
+      const sprite = await client.sprite(spriteName);
       
       // Use execFile with proper arguments (avoids shell quoting issues)
       const { stdout } = await sprite.execFile('sh', ['-c', 'echo hello from pipe test']);
@@ -131,7 +131,7 @@ describe('Sprite Lifecycle', { skip: skipTests }, () => {
     });
 
     it('should handle TTY mode', async () => {
-      const sprite = client.sprite(spriteName);
+      const sprite = await client.sprite(spriteName);
       const { stdout } = await sprite.exec('tty', {
         tty: true,
         rows: 24,
@@ -144,7 +144,7 @@ describe('Sprite Lifecycle', { skip: skipTests }, () => {
     });
 
     it('should handle non-TTY mode', async () => {
-      const sprite = client.sprite(spriteName);
+      const sprite = await client.sprite(spriteName);
       
       try {
         await sprite.exec('tty');
@@ -161,7 +161,7 @@ describe('Sprite Lifecycle', { skip: skipTests }, () => {
     });
 
     it('should handle interactive TTY command', async () => {
-      const sprite = client.sprite(spriteName);
+      const sprite = await client.sprite(spriteName);
       const { stdout } = await sprite.exec('stty size', {
         tty: true,
         rows: 24,
@@ -174,7 +174,7 @@ describe('Sprite Lifecycle', { skip: skipTests }, () => {
     });
 
     it('should handle combined output', async () => {
-      const sprite = client.sprite(spriteName);
+      const sprite = await client.sprite(spriteName);
       const cmd = sprite.spawn('sh', ['-c', 'echo stdout; echo stderr >&2']);
       
       const stdoutChunks: Buffer[] = [];
@@ -195,7 +195,7 @@ describe('Sprite Lifecycle', { skip: skipTests }, () => {
     });
 
     it('should handle execFile with arguments', async () => {
-      const sprite = client.sprite(spriteName);
+      const sprite = await client.sprite(spriteName);
       const { stdout } = await sprite.execFile('echo', ['arg1', 'arg2', 'arg3']);
       
       assert.strictEqual(stdout, 'arg1 arg2 arg3\n');
@@ -203,7 +203,7 @@ describe('Sprite Lifecycle', { skip: skipTests }, () => {
     });
 
     it('should handle spawn with event emitter', async () => {
-      const sprite = client.sprite(spriteName);
+      const sprite = await client.sprite(spriteName);
       const cmd = sprite.spawn('echo', ['hello']);
       
       let exitCode = -1;

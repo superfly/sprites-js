@@ -10,9 +10,8 @@ import { ExecError } from './types.js';
 describe('WebSocket URL Building', () => {
   it('should build correct WebSocket URL for basic command', () => {
     const client = new SpritesClient('test-token', { baseURL: 'http://localhost:8080' });
-    const sprite = client.sprite('my-sprite');
+    const sprite: any = { name: 'my-sprite', client };
     
-    // Build URL directly without creating WebSocket
     const url = buildTestURL(sprite, 'echo', ['hello'], {});
     
     const parsed = new URL(url);
@@ -24,7 +23,7 @@ describe('WebSocket URL Building', () => {
 
   it('should build correct WebSocket URL with environment', () => {
     const client = new SpritesClient('test-token', { baseURL: 'http://localhost:8080' });
-    const sprite = client.sprite('test-sprite');
+    const sprite: any = { name: 'test-sprite', client };
     
     const url = buildTestURL(sprite, 'env', [], {
       env: { FOO: 'bar', BAZ: 'qux' }
@@ -39,7 +38,7 @@ describe('WebSocket URL Building', () => {
 
   it('should build correct WebSocket URL with working directory', () => {
     const client = new SpritesClient('test-token', { baseURL: 'http://localhost:8080' });
-    const sprite = client.sprite('my-sprite');
+    const sprite: any = { name: 'my-sprite', client };
     
     const url = buildTestURL(sprite, 'pwd', [], { cwd: '/tmp' });
     
@@ -49,7 +48,7 @@ describe('WebSocket URL Building', () => {
 
   it('should build correct WebSocket URL with TTY', () => {
     const client = new SpritesClient('test-token', { baseURL: 'http://localhost:8080' });
-    const sprite = client.sprite('my-sprite');
+    const sprite: any = { name: 'my-sprite', client };
     
     const url = buildTestURL(sprite, 'bash', [], {
       tty: true,
@@ -65,7 +64,7 @@ describe('WebSocket URL Building', () => {
 
   it('should convert HTTPS to WSS', () => {
     const client = new SpritesClient('test-token', { baseURL: 'https://api.sprites.dev' });
-    const sprite = client.sprite('my-sprite');
+    const sprite: any = { name: 'my-sprite', client };
     
     const url = buildTestURL(sprite, 'echo', ['test'], {});
     
