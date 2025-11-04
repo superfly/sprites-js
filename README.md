@@ -10,13 +10,13 @@ Remote command execution for Sprites, with an API that mirrors Node.js `child_pr
 ## Installation
 
 ```bash
-npm install @superfly/sprites
+npm install @fly/sprites
 ```
 
 ## Quick Start
 
 ```typescript
-import { SpritesClient } from '@superfly/sprites';
+import { SpritesClient } from '@fly/sprites';
 
 const client = new SpritesClient(process.env.SPRITES_TOKEN!);
 const sprite = client.sprite('my-sprite');
@@ -193,7 +193,7 @@ const attached = sprite.attachSession(sessions[0].id);
 ### Error Handling
 
 ```typescript
-import { ExecError } from '@superfly/sprites';
+import { ExecError } from '@fly/sprites';
 
 try {
   await sprite.exec('false');
