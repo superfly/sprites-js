@@ -1,8 +1,23 @@
+# Source files (only ship compiled dist/)
 src/
+*.ts
+!*.d.ts
 tsconfig.json
+
+# Test files
 test-node-cli/
+*.test.js
+*.test.d.ts
+
+# Documentation (except README)
 *.md
 !README.md
-IMPLEMENTATION_PLAN.md
-PROGRESS.md
+
+# Build artifacts
+*.tsbuildinfo
+
+# Development files
+.github/
+.vscode/
+.idea/
 
