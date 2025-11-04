@@ -23,6 +23,7 @@ export type {
   ControlMessage,
   CreateSpriteRequest,
   CreateSpriteResponse,
+  Checkpoint,
 } from './types.js';
 
 export { ExecError, StreamID } from './types.js';

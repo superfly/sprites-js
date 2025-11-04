@@ -230,3 +230,17 @@ export interface CreateSpriteResponse {
   name: string;
 }
 
+/**
+ * Checkpoint information
+ */
+export interface Checkpoint {
+  /** Checkpoint identifier (e.g., "v3" or "Current") */
+  id: string;
+  /** Creation time */
+  createTime: Date;
+  /** Optional user-provided comment */
+  comment?: string;
+  /** Optional history entries */
+  history?: string[];
+}
+

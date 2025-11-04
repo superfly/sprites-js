@@ -10,6 +10,7 @@ import type {
   ExecResult,
   Session,
   SpriteConfig,
+  Checkpoint,
 } from './types.js';
 
 /**
@@ -139,6 +140,98 @@ export class Sprite {
    */
   async upgrade(): Promise<void> {
     await this.client.upgradeSprite(this.name);
+  }
+
+  /**
+   * Create a checkpoint with an optional comment.
+   * Returns the streaming Response (NDJSON). Caller is responsible for consuming the stream.
+   */
+  async createCheckpoint(comment?: string): Promise<Response> {
+    const body: any = {};
+    if (comment) body.comment = comment;
+    const response = await fetch(`${this.client.baseURL}/v1/sprites/${this.name}/checkpoint`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.client.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      // No timeout: checkpoint streams can be long-running
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Failed to create checkpoint (status ${response.status}): ${text}`);
+    }
+    return response;
+  }
+
+  /**
+   * List checkpoints
+   */
+  async listCheckpoints(): Promise<Checkpoint[]> {
+    const response = await fetch(`${this.client.baseURL}/v1/sprites/${this.name}/checkpoints`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${this.client.token}`,
+      },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Failed to list checkpoints (status ${response.status}): ${text}`);
+    }
+    const raw = await response.json() as any[];
+    return raw.map((cp) => ({
+      id: cp.id,
+      createTime: new Date(cp.create_time),
+      comment: cp.comment,
+      history: cp.history,
+    }));
+  }
+
+  /**
+   * Get checkpoint details
+   */
+  async getCheckpoint(id: string): Promise<Checkpoint> {
+    const response = await fetch(`${this.client.baseURL}/v1/sprites/${this.name}/checkpoints/${id}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${this.client.token}`,
+      },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (response.status === 404) {
+      throw new Error(`Checkpoint not found: ${id}`);
+    }
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Failed to get checkpoint (status ${response.status}): ${text}`);
+    }
+    const cp = await response.json() as any;
+    return {
+      id: cp.id,
+      createTime: new Date(cp.create_time),
+      comment: cp.comment,
+      history: cp.history,
+    };
+  }
+
+  /**
+   * Restore from a checkpoint. Returns the streaming Response (NDJSON).
+   */
+  async restoreCheckpoint(id: string): Promise<Response> {
+    const response = await fetch(`${this.client.baseURL}/v1/sprites/${this.name}/checkpoints/${id}/restore`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.client.token}`,
+      },
+      // No timeout: restore streams can be long-running
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Failed to restore checkpoint (status ${response.status}): ${text}`);
+    }
+    return response;
   }
 }
 
