@@ -20,6 +20,7 @@ describe('WebSocket URL Building', () => {
     assert.strictEqual(parsed.pathname, '/v1/sprites/my-sprite/exec');
     assert.strictEqual(parsed.searchParams.get('path'), 'echo');
     assert.deepStrictEqual(parsed.searchParams.getAll('cmd'), ['echo', 'hello']);
+    assert.strictEqual(parsed.searchParams.get('stdin'), 'true');
   });
 
   it('should build correct WebSocket URL with environment', () => {
@@ -35,6 +36,7 @@ describe('WebSocket URL Building', () => {
     const envParams = parsed.searchParams.getAll('env');
     assert.ok(envParams.includes('FOO=bar'));
     assert.ok(envParams.includes('BAZ=qux'));
+    assert.strictEqual(parsed.searchParams.get('stdin'), 'true');
   });
 
   it('should build correct WebSocket URL with working directory', () => {
@@ -45,6 +47,7 @@ describe('WebSocket URL Building', () => {
     
     const parsed = new URL(url);
     assert.strictEqual(parsed.searchParams.get('dir'), '/tmp');
+    assert.strictEqual(parsed.searchParams.get('stdin'), 'true');
   });
 
   it('should build correct WebSocket URL with TTY', () => {
@@ -61,6 +64,7 @@ describe('WebSocket URL Building', () => {
     assert.strictEqual(parsed.searchParams.get('tty'), 'true');
     assert.strictEqual(parsed.searchParams.get('rows'), '24');
     assert.strictEqual(parsed.searchParams.get('cols'), '80');
+    assert.strictEqual(parsed.searchParams.get('stdin'), 'true');
   });
 
   it('should convert HTTPS to WSS', () => {
@@ -71,6 +75,7 @@ describe('WebSocket URL Building', () => {
     
     const parsed = new URL(url);
     assert.strictEqual(parsed.protocol, 'wss:');
+    assert.strictEqual(parsed.searchParams.get('stdin'), 'true');
   });
 });
 
@@ -89,6 +94,7 @@ function buildTestURL(sprite: any, command: string, args: string[], options: any
     url.searchParams.append('cmd', arg);
   });
   url.searchParams.set('path', command);
+  url.searchParams.set('stdin', 'true');
   
   if (options.env) {
     for (const [key, value] of Object.entries(options.env)) {

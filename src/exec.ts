@@ -139,6 +139,9 @@ export class SpriteCommand extends EventEmitter {
     });
     url.searchParams.set('path', command);
 
+    // Enable stdin by default so the server will accept input frames
+    url.searchParams.set('stdin', 'true');
+
     // Add environment variables
     if (options.env) {
       for (const [key, value] of Object.entries(options.env)) {
