@@ -11,6 +11,7 @@ import type {
   ListOptions,
   CreateSpriteRequest,
   CreateSpriteResponse,
+  URLSettings,
 } from './types.js';
 
 /**
@@ -171,6 +172,28 @@ export class SpritesClient {
     if (!response.ok && response.status !== 204) {
       const body = await response.text();
       throw new Error(`Failed to upgrade sprite (status ${response.status}): ${body}`);
+    }
+  }
+
+  /**
+   * Update URL authentication settings for a sprite
+   * @param name - Sprite name
+   * @param settings - URL settings with auth: "public" for no auth, "sprite" for authenticated
+   */
+  async updateURLSettings(name: string, settings: URLSettings): Promise<void> {
+    const response = await this.fetch(`${this.baseURL}/v1/sprites/${name}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url_settings: settings }),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Failed to update URL settings (status ${response.status}): ${body}`);
     }
   }
 

@@ -13,6 +13,14 @@ export interface ClientOptions {
 }
 
 /**
+ * URL authentication settings
+ */
+export interface URLSettings {
+  /** Auth mode: "public" for no auth, "sprite" for Sprite authentication */
+  auth?: string;
+}
+
+/**
  * Sprite configuration options for creation
  */
 export interface SpriteConfig {
@@ -94,6 +102,10 @@ export interface SpriteInfo {
   bucketName?: string;
   /** Primary region */
   primaryRegion?: string;
+  /** Public URL for the sprite */
+  url?: string;
+  /** URL authentication settings */
+  urlSettings?: URLSettings;
 }
 
 /**

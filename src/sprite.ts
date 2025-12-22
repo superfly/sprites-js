@@ -11,6 +11,7 @@ import type {
   Session,
   SpriteConfig,
   Checkpoint,
+  URLSettings,
 } from './types.js';
 
 /**
@@ -31,6 +32,8 @@ export class Sprite {
   updatedAt?: Date;
   bucketName?: string;
   primaryRegion?: string;
+  url?: string;
+  urlSettings?: URLSettings;
 
   constructor(name: string, client: SpritesClient) {
     this.name = name;
@@ -232,6 +235,14 @@ export class Sprite {
       throw new Error(`Failed to restore checkpoint (status ${response.status}): ${text}`);
     }
     return response;
+  }
+
+  /**
+   * Update URL authentication settings
+   * @param settings - URL settings with auth: "public" for no auth, "sprite" for authenticated
+   */
+  async updateURLSettings(settings: URLSettings): Promise<void> {
+    await this.client.updateURLSettings(this.name, settings);
   }
 }
 

@@ -24,6 +24,7 @@ export type {
   CreateSpriteRequest,
   CreateSpriteResponse,
   Checkpoint,
+  URLSettings,
 } from './types.js';
 
 export { ExecError, StreamID } from './types.js';
