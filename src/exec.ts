@@ -48,6 +48,11 @@ export class SpriteCommand extends EventEmitter {
       options.tty || false
     );
 
+    // Mark if this is a session attach (TTY mode will be auto-detected)
+    if (options.sessionId) {
+      this.wsCmd.isAttach = true;
+    }
+
     // Set up exit promise
     this.exitPromise = new Promise((resolve) => {
       this.exitResolver = resolve;
@@ -130,14 +135,24 @@ export class SpriteCommand extends EventEmitter {
       baseURL = 'ws' + baseURL.substring(4);
     }
 
-    const url = new URL(`${baseURL}/v1/sprites/${this.sprite.name}/exec`);
+    // Use /exec/{id} for attach, /exec for new commands
+    let path: string;
+    if (options.sessionId) {
+      path = `/v1/sprites/${this.sprite.name}/exec/${options.sessionId}`;
+    } else {
+      path = `/v1/sprites/${this.sprite.name}/exec`;
+    }
 
-    // Add command and arguments
-    const allArgs = [command, ...args];
-    allArgs.forEach((arg) => {
-      url.searchParams.append('cmd', arg);
-    });
-    url.searchParams.set('path', command);
+    const url = new URL(`${baseURL}${path}`);
+
+    // Only add command/args for new commands (not attach)
+    if (!options.sessionId) {
+      const allArgs = [command, ...args];
+      allArgs.forEach((arg) => {
+        url.searchParams.append('cmd', arg);
+      });
+      url.searchParams.set('path', command);
+    }
 
     // Enable stdin by default so the server will accept input frames
     url.searchParams.set('stdin', 'true');
@@ -154,8 +169,8 @@ export class SpriteCommand extends EventEmitter {
       url.searchParams.set('dir', options.cwd);
     }
 
-    // Add TTY settings
-    if (options.tty) {
+    // Add TTY settings (only for new commands, attach auto-detects)
+    if (options.tty && !options.sessionId) {
       url.searchParams.set('tty', 'true');
       if (options.rows) {
         url.searchParams.set('rows', options.rows.toString());
@@ -163,11 +178,6 @@ export class SpriteCommand extends EventEmitter {
       if (options.cols) {
         url.searchParams.set('cols', options.cols.toString());
       }
-    }
-
-    // Add session ID if specified
-    if (options.sessionId) {
-      url.searchParams.set('id', options.sessionId);
     }
 
     // Add detachable flag
@@ -191,10 +201,17 @@ export class SpriteCommand extends EventEmitter {
   }
 
   /**
-   * Kill the command
+   * Kill the command with a signal
    */
-  kill(_signal: string = 'SIGTERM'): void {
-    this.wsCmd.close();
+  kill(signal: string = 'SIGTERM'): void {
+    this.wsCmd.signal(signal);
+  }
+
+  /**
+   * Send a signal to the remote process
+   */
+  signal(sig: string): void {
+    this.wsCmd.signal(sig);
   }
 
   /**

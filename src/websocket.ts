@@ -6,6 +6,10 @@ import { EventEmitter } from 'node:events';
 import { Writable } from 'node:stream';
 import { StreamID, ControlMessage } from './types.js';
 
+// WebSocket keepalive timeouts (matching Go SDK)
+const WS_PING_INTERVAL = 15_000; // 15 seconds
+const WS_PONG_WAIT = 45_000; // 45 seconds
+
 /**
  * WebSocket command execution handler
  */
@@ -15,6 +19,12 @@ export class WSCommand extends EventEmitter {
   private tty: boolean;
   private started: boolean = false;
   private done: boolean = false;
+  private pingInterval: ReturnType<typeof setInterval> | null = null;
+  private pongTimeout: ReturnType<typeof setTimeout> | null = null;
+  private lastPongTime: number = 0;
+
+  /** Whether this is attaching to an existing session */
+  isAttach: boolean = false;
 
   readonly stdout: Writable;
   readonly stderr: Writable;
@@ -51,7 +61,20 @@ export class WSCommand extends EventEmitter {
 
         this.ws.binaryType = 'arraybuffer';
 
-        this.ws.addEventListener('open', () => {
+        this.ws.addEventListener('open', async () => {
+          // When attaching to an existing session, wait for session_info to determine TTY mode
+          if (this.isAttach) {
+            try {
+              await this.waitForSessionInfo();
+            } catch (err) {
+              reject(err);
+              return;
+            }
+          }
+
+          // Start keepalive ping/pong
+          this.startKeepalive();
+
           resolve();
         });
 
@@ -77,9 +100,96 @@ export class WSCommand extends EventEmitter {
   }
 
   /**
+   * Wait for session_info message when attaching to a session.
+   * Sets TTY mode based on the session's actual mode.
+   */
+  private waitForSessionInfo(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Timeout waiting for session_info'));
+      }, 10_000);
+
+      const messageHandler = (event: MessageEvent) => {
+        if (typeof event.data === 'string') {
+          try {
+            const info = JSON.parse(event.data);
+            if (info.type === 'session_info') {
+              clearTimeout(timeout);
+              this.ws?.removeEventListener('message', messageHandler);
+              this.tty = info.tty === true;
+              this.emit('message', info);
+              resolve();
+              return;
+            }
+            // Pass other text messages to handler
+            this.emit('message', info);
+          } catch {
+            // Not JSON, ignore during session_info wait
+          }
+        }
+        // Ignore binary messages during this phase - they're historical output
+      };
+
+      this.ws?.addEventListener('message', messageHandler);
+    });
+  }
+
+  /**
+   * Start keepalive ping/pong mechanism
+   */
+  private startKeepalive(): void {
+    this.lastPongTime = Date.now();
+
+    // Send pings at regular intervals
+    this.pingInterval = setInterval(() => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        this.stopKeepalive();
+        return;
+      }
+
+      // Check if we've received a pong recently
+      const timeSinceLastPong = Date.now() - this.lastPongTime;
+      if (timeSinceLastPong > WS_PONG_WAIT) {
+        // Connection appears dead
+        this.emit('error', new Error('WebSocket keepalive timeout'));
+        this.close();
+        return;
+      }
+
+      // Note: Browser WebSocket API doesn't expose ping/pong directly.
+      // Node.js WebSocket implementation may support it differently.
+      // The server-side handles keepalive; we just track activity.
+    }, WS_PING_INTERVAL);
+  }
+
+  /**
+   * Stop keepalive mechanism
+   */
+  private stopKeepalive(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+    if (this.pongTimeout) {
+      clearTimeout(this.pongTimeout);
+      this.pongTimeout = null;
+    }
+  }
+
+  /**
+   * Reset keepalive timer (call on any message received)
+   */
+  private resetKeepalive(): void {
+    this.lastPongTime = Date.now();
+  }
+
+  /**
    * Handle incoming WebSocket messages
    */
   private handleMessage(event: MessageEvent): void {
+    // Reset keepalive on any message received
+    this.resetKeepalive();
+
     if (this.tty) {
       // TTY mode
       if (typeof event.data === 'string') {
@@ -123,14 +233,16 @@ export class WSCommand extends EventEmitter {
    * Handle WebSocket close
    */
   private handleClose(event: CloseEvent): void {
+    this.stopKeepalive();
+
     if (!this.done) {
       this.done = true;
-      
+
       // If we're in TTY mode and haven't received an exit code, determine it from close event
       if (this.tty && this.exitCode === -1) {
         this.exitCode = event.code === 1000 ? 0 : 1;
       }
-      
+
       this.emit('exit', this.exitCode);
     }
   }
@@ -178,6 +290,25 @@ export class WSCommand extends EventEmitter {
   }
 
   /**
+   * Send a signal to the remote process
+   */
+  signal(sig: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const msg = { type: 'signal', signal: sig };
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  /**
+   * Get the current TTY mode
+   */
+  isTTY(): boolean {
+    return this.tty;
+  }
+
+  /**
    * Get the exit code
    */
   getExitCode(): number {
@@ -195,6 +326,7 @@ export class WSCommand extends EventEmitter {
    * Close the WebSocket connection
    */
   close(): void {
+    this.stopKeepalive();
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close(1000, '');
     }

@@ -1,12 +1,14 @@
 /**
  * Sprites JavaScript/TypeScript SDK
- * 
+ *
  * Remote command execution for Sprites, with an API that mirrors Node.js child_process
  */
 
 export { SpritesClient } from './client.js';
 export { Sprite } from './sprite.js';
 export { SpriteCommand } from './exec.js';
+export { CheckpointStream, RestoreStream } from './checkpoint.js';
+export { ProxySession, ProxyManager, proxyPort, proxyPorts } from './proxy.js';
 
 export type {
   ClientOptions,
@@ -25,6 +27,10 @@ export type {
   CreateSpriteResponse,
   Checkpoint,
   URLSettings,
+  StreamMessage,
+  PortMapping,
+  ProxyInitMessage,
+  ProxyResponseMessage,
 } from './types.js';
 
 export { ExecError, StreamID } from './types.js';

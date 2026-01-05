@@ -140,6 +140,8 @@ export interface Session {
   id: string;
   /** Command being executed */
   command: string;
+  /** Working directory */
+  workdir: string;
   /** Session creation time */
   created: Date;
   /** Bytes per second throughput */
@@ -148,6 +150,8 @@ export interface Session {
   isActive: boolean;
   /** Last activity timestamp */
   lastActivity?: Date;
+  /** Whether the session is in TTY mode */
+  tty: boolean;
 }
 
 /**
@@ -254,5 +258,49 @@ export interface Checkpoint {
   comment?: string;
   /** Optional history entries */
   history?: string[];
+}
+
+/**
+ * Streaming message from checkpoint/restore operations
+ */
+export interface StreamMessage {
+  /** Message type */
+  type: 'info' | 'stdout' | 'stderr' | 'error';
+  /** Message data */
+  data?: string;
+  /** Error message */
+  error?: string;
+}
+
+/**
+ * Port mapping for proxy operations
+ */
+export interface PortMapping {
+  /** Local port to listen on */
+  localPort: number;
+  /** Remote port to connect to */
+  remotePort: number;
+  /** Optional remote host (defaults to "localhost") */
+  remoteHost?: string;
+}
+
+/**
+ * Proxy initialization message
+ */
+export interface ProxyInitMessage {
+  /** Remote host to connect to */
+  host: string;
+  /** Remote port to connect to */
+  port: number;
+}
+
+/**
+ * Proxy response message
+ */
+export interface ProxyResponseMessage {
+  /** Connection status */
+  status: string;
+  /** Target address */
+  target: string;
 }
 

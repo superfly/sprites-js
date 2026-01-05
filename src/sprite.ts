@@ -4,6 +4,8 @@
 
 import { SpritesClient } from './client.js';
 import { SpriteCommand, spawn, exec, execFile } from './exec.js';
+import { CheckpointStream, RestoreStream } from './checkpoint.js';
+import { ProxySession, proxyPort, proxyPorts } from './proxy.js';
 import type {
   SpawnOptions,
   ExecOptions,
@@ -12,6 +14,7 @@ import type {
   SpriteConfig,
   Checkpoint,
   URLSettings,
+  PortMapping,
 } from './types.js';
 
 /**
@@ -108,9 +111,11 @@ export class Sprite {
         const session: Session = {
           id: s.id,
           command: s.command,
+          workdir: s.workdir || '',
           created: new Date(s.created),
           bytesPerSecond: s.bytes_per_second || 0,
           isActive: s.is_active || false,
+          tty: s.tty || false,
         };
 
         if (s.last_activity) {
@@ -147,9 +152,9 @@ export class Sprite {
 
   /**
    * Create a checkpoint with an optional comment.
-   * Returns the streaming Response (NDJSON). Caller is responsible for consuming the stream.
+   * Returns a CheckpointStream for reading progress messages.
    */
-  async createCheckpoint(comment?: string): Promise<Response> {
+  async createCheckpoint(comment?: string): Promise<CheckpointStream> {
     const body: any = {};
     if (comment) body.comment = comment;
     const response = await fetch(`${this.client.baseURL}/v1/sprites/${this.name}/checkpoint`, {
@@ -165,14 +170,19 @@ export class Sprite {
       const text = await response.text();
       throw new Error(`Failed to create checkpoint (status ${response.status}): ${text}`);
     }
-    return response;
+    return new CheckpointStream(response);
   }
 
   /**
    * List checkpoints
+   * @param historyFilter - Optional filter for checkpoint history
    */
-  async listCheckpoints(): Promise<Checkpoint[]> {
-    const response = await fetch(`${this.client.baseURL}/v1/sprites/${this.name}/checkpoints`, {
+  async listCheckpoints(historyFilter?: string): Promise<Checkpoint[]> {
+    let url = `${this.client.baseURL}/v1/sprites/${this.name}/checkpoints`;
+    if (historyFilter) {
+      url += `?history=${encodeURIComponent(historyFilter)}`;
+    }
+    const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${this.client.token}`,
@@ -220,9 +230,10 @@ export class Sprite {
   }
 
   /**
-   * Restore from a checkpoint. Returns the streaming Response (NDJSON).
+   * Restore from a checkpoint.
+   * Returns a RestoreStream for reading progress messages.
    */
-  async restoreCheckpoint(id: string): Promise<Response> {
+  async restoreCheckpoint(id: string): Promise<RestoreStream> {
     const response = await fetch(`${this.client.baseURL}/v1/sprites/${this.name}/checkpoints/${id}/restore`, {
       method: 'POST',
       headers: {
@@ -234,7 +245,7 @@ export class Sprite {
       const text = await response.text();
       throw new Error(`Failed to restore checkpoint (status ${response.status}): ${text}`);
     }
-    return response;
+    return new RestoreStream(response);
   }
 
   /**
@@ -243,6 +254,28 @@ export class Sprite {
    */
   async updateURLSettings(settings: URLSettings): Promise<void> {
     await this.client.updateURLSettings(this.name, settings);
+  }
+
+  /**
+   * Create a proxy session for a single port
+   * @param localPort - Local port to listen on
+   * @param remotePort - Remote port to connect to on the sprite
+   * @param remoteHost - Optional remote host (defaults to "localhost")
+   */
+  async proxyPort(
+    localPort: number,
+    remotePort: number,
+    remoteHost?: string
+  ): Promise<ProxySession> {
+    return proxyPort(this.client, this.name, localPort, remotePort, remoteHost);
+  }
+
+  /**
+   * Create proxy sessions for multiple port mappings
+   * @param mappings - Array of port mappings
+   */
+  async proxyPorts(mappings: PortMapping[]): Promise<ProxySession[]> {
+    return proxyPorts(this.client, this.name, mappings);
   }
 }
 
