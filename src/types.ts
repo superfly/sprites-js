@@ -304,3 +304,97 @@ export interface ProxyResponseMessage {
   target: string;
 }
 
+/**
+ * Service definition
+ */
+export interface Service {
+  /** Service name */
+  name: string;
+  /** Command to execute */
+  cmd: string;
+  /** Command arguments */
+  args: string[];
+  /** Service dependencies */
+  needs: string[];
+  /** Optional HTTP port for proxy routing */
+  httpPort?: number;
+}
+
+/**
+ * Service state information
+ */
+export interface ServiceState {
+  /** Service name */
+  name: string;
+  /** Current status */
+  status: 'stopped' | 'starting' | 'running' | 'stopping' | 'failed';
+  /** Process ID if running */
+  pid?: number;
+  /** Start timestamp (ISO 8601) */
+  startedAt?: string;
+  /** Error message if failed */
+  error?: string;
+  /** Number of restarts */
+  restartCount?: number;
+  /** Next restart timestamp (ISO 8601) */
+  nextRestartAt?: string;
+}
+
+/**
+ * Service with its current state
+ */
+export interface ServiceWithState extends Service {
+  /** Current service state */
+  state?: ServiceState;
+}
+
+/**
+ * Request body for creating/updating a service
+ */
+export interface ServiceRequest {
+  /** Command to execute */
+  cmd: string;
+  /** Command arguments */
+  args?: string[];
+  /** Service dependencies */
+  needs?: string[];
+  /** Optional HTTP port for proxy routing */
+  httpPort?: number;
+}
+
+/**
+ * Service log event from NDJSON stream
+ */
+export interface ServiceLogEvent {
+  /** Event type */
+  type: 'stdout' | 'stderr' | 'exit' | 'error' | 'complete' | 'started' | 'stopping' | 'stopped';
+  /** Event data (log output) */
+  data?: string;
+  /** Exit code (for "exit" type) */
+  exitCode?: number;
+  /** Event timestamp (milliseconds since epoch) */
+  timestamp: number;
+  /** Log file paths (for "complete" type) */
+  logFiles?: Record<string, string>;
+}
+
+/**
+ * Network policy rule
+ */
+export interface PolicyRule {
+  /** Domain to match (mutually exclusive with include) */
+  domain?: string;
+  /** Action to take */
+  action?: 'allow' | 'deny';
+  /** Include preset rules (e.g., "defaults") - mutually exclusive with domain */
+  include?: string;
+}
+
+/**
+ * Network policy document
+ */
+export interface NetworkPolicy {
+  /** Array of policy rules */
+  rules: PolicyRule[];
+}
+

@@ -6,6 +6,17 @@ import { SpritesClient } from './client.js';
 import { SpriteCommand, spawn, exec, execFile } from './exec.js';
 import { CheckpointStream, RestoreStream } from './checkpoint.js';
 import { ProxySession, proxyPort, proxyPorts } from './proxy.js';
+import {
+  ServiceLogStream,
+  listServices,
+  getService,
+  createService,
+  deleteService,
+  startService,
+  stopService,
+  signalService,
+} from './services.js';
+import { getNetworkPolicy, updateNetworkPolicy } from './policy.js';
 import type {
   SpawnOptions,
   ExecOptions,
@@ -15,6 +26,9 @@ import type {
   Checkpoint,
   URLSettings,
   PortMapping,
+  ServiceWithState,
+  ServiceRequest,
+  NetworkPolicy,
 } from './types.js';
 
 /**
@@ -276,6 +290,95 @@ export class Sprite {
    */
   async proxyPorts(mappings: PortMapping[]): Promise<ProxySession[]> {
     return proxyPorts(this.client, this.name, mappings);
+  }
+
+  // ========== Services API ==========
+
+  /**
+   * List all services on this sprite
+   */
+  async listServices(): Promise<ServiceWithState[]> {
+    return listServices(this.client, this.name);
+  }
+
+  /**
+   * Get a specific service
+   */
+  async getService(serviceName: string): Promise<ServiceWithState> {
+    return getService(this.client, this.name, serviceName);
+  }
+
+  /**
+   * Create a service (starts automatically with log streaming)
+   * @param serviceName - Name for the service
+   * @param config - Service configuration
+   * @param duration - Optional monitoring duration (e.g., "5s", "30s")
+   * @returns Stream of log events during startup
+   */
+  async createService(
+    serviceName: string,
+    config: ServiceRequest,
+    duration?: string
+  ): Promise<ServiceLogStream> {
+    return createService(this.client, this.name, serviceName, config, duration);
+  }
+
+  /**
+   * Delete a service
+   */
+  async deleteService(serviceName: string): Promise<void> {
+    return deleteService(this.client, this.name, serviceName);
+  }
+
+  /**
+   * Start a service
+   * @param serviceName - Service to start
+   * @param duration - Optional monitoring duration (e.g., "5s", "30s")
+   * @returns Stream of log events
+   */
+  async startService(
+    serviceName: string,
+    duration?: string
+  ): Promise<ServiceLogStream> {
+    return startService(this.client, this.name, serviceName, duration);
+  }
+
+  /**
+   * Stop a service
+   * @param serviceName - Service to stop
+   * @param timeout - Optional stop timeout (e.g., "10s")
+   * @returns Stream of log events
+   */
+  async stopService(
+    serviceName: string,
+    timeout?: string
+  ): Promise<ServiceLogStream> {
+    return stopService(this.client, this.name, serviceName, timeout);
+  }
+
+  /**
+   * Send a signal to a service
+   * @param serviceName - Service to signal
+   * @param signal - Signal to send (e.g., "TERM", "KILL", "HUP")
+   */
+  async signalService(serviceName: string, signal: string): Promise<void> {
+    return signalService(this.client, this.name, serviceName, signal);
+  }
+
+  // ========== Policy API ==========
+
+  /**
+   * Get the current network policy
+   */
+  async getNetworkPolicy(): Promise<NetworkPolicy> {
+    return getNetworkPolicy(this.client, this.name);
+  }
+
+  /**
+   * Update the network policy
+   */
+  async updateNetworkPolicy(policy: NetworkPolicy): Promise<void> {
+    return updateNetworkPolicy(this.client, this.name, policy);
   }
 }
 

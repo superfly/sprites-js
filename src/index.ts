@@ -9,6 +9,7 @@ export { Sprite } from './sprite.js';
 export { SpriteCommand } from './exec.js';
 export { CheckpointStream, RestoreStream } from './checkpoint.js';
 export { ProxySession, ProxyManager, proxyPort, proxyPorts } from './proxy.js';
+export { ServiceLogStream } from './services.js';
 
 export type {
   ClientOptions,
@@ -31,6 +32,13 @@ export type {
   PortMapping,
   ProxyInitMessage,
   ProxyResponseMessage,
+  Service,
+  ServiceState,
+  ServiceWithState,
+  ServiceRequest,
+  ServiceLogEvent,
+  PolicyRule,
+  NetworkPolicy,
 } from './types.js';
 
 export { ExecError, StreamID } from './types.js';

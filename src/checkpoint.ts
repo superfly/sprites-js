@@ -98,6 +98,20 @@ export class CheckpointStream {
     }
     this.done = true;
   }
+
+  /**
+   * Async iterator implementation for for-await-of loops
+   */
+  async *[Symbol.asyncIterator](): AsyncIterableIterator<StreamMessage> {
+    try {
+      let msg: StreamMessage | null;
+      while ((msg = await this.next()) !== null) {
+        yield msg;
+      }
+    } finally {
+      this.close();
+    }
+  }
 }
 
 /**
@@ -193,5 +207,19 @@ export class RestoreStream {
       this.reader = null;
     }
     this.done = true;
+  }
+
+  /**
+   * Async iterator implementation for for-await-of loops
+   */
+  async *[Symbol.asyncIterator](): AsyncIterableIterator<StreamMessage> {
+    try {
+      let msg: StreamMessage | null;
+      while ((msg = await this.next()) !== null) {
+        yield msg;
+      }
+    } finally {
+      this.close();
+    }
   }
 }

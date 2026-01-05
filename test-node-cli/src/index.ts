@@ -173,6 +173,117 @@ async function destroySprite(client: SpritesClient, name: string, logger: Logger
   }
 }
 
+async function handlePolicyCommand(
+  client: SpritesClient,
+  spriteName: string,
+  args: string[],
+  logger: Logger
+): Promise<void> {
+  if (args.length === 0) {
+    console.error('Error: policy subcommand required (get, set)');
+    process.exit(1);
+  }
+
+  const sprite = client.sprite(spriteName);
+  const subcommand = args[0];
+
+  try {
+    switch (subcommand) {
+      case 'get': {
+        const policy = await sprite.getNetworkPolicy();
+        console.log(JSON.stringify(policy, null, 2));
+        break;
+      }
+      case 'set': {
+        if (!args[1]) {
+          console.error('Error: policy JSON required');
+          process.exit(1);
+        }
+        const policy = JSON.parse(args[1]);
+        await sprite.updateNetworkPolicy(policy);
+        console.log(JSON.stringify({ status: 'updated' }));
+        break;
+      }
+      default:
+        console.error(`Error: unknown policy subcommand: ${subcommand}`);
+        process.exit(1);
+    }
+  } catch (error) {
+    logger.logEvent('policy_command_failed', {
+      subcommand,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    console.error(`Policy command failed: ${error}`);
+    process.exit(1);
+  }
+}
+
+async function handleCheckpointCommand(
+  client: SpritesClient,
+  spriteName: string,
+  args: string[],
+  logger: Logger
+): Promise<void> {
+  if (args.length === 0) {
+    console.error('Error: checkpoint subcommand required (list, get, create, restore)');
+    process.exit(1);
+  }
+
+  const sprite = client.sprite(spriteName);
+  const subcommand = args[0];
+
+  try {
+    switch (subcommand) {
+      case 'list': {
+        const checkpoints = await sprite.listCheckpoints();
+        console.log(JSON.stringify(checkpoints, null, 2));
+        break;
+      }
+      case 'get': {
+        if (!args[1]) {
+          console.error('Error: checkpoint ID required');
+          process.exit(1);
+        }
+        const checkpoint = await sprite.getCheckpoint(args[1]);
+        console.log(JSON.stringify(checkpoint, null, 2));
+        break;
+      }
+      case 'create': {
+        if (!args[1]) {
+          console.error('Error: checkpoint name required');
+          process.exit(1);
+        }
+        const stream = await sprite.createCheckpoint(args[1]);
+        for await (const event of stream) {
+          console.log(JSON.stringify(event));
+        }
+        break;
+      }
+      case 'restore': {
+        if (!args[1]) {
+          console.error('Error: checkpoint ID required');
+          process.exit(1);
+        }
+        const stream = await sprite.restoreCheckpoint(args[1]);
+        for await (const event of stream) {
+          console.log(JSON.stringify(event));
+        }
+        break;
+      }
+      default:
+        console.error(`Error: unknown checkpoint subcommand: ${subcommand}`);
+        process.exit(1);
+    }
+  } catch (error) {
+    logger.logEvent('checkpoint_command_failed', {
+      subcommand,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    console.error(`Checkpoint command failed: ${error}`);
+    process.exit(1);
+  }
+}
+
 function showHelp(): void {
   console.log(`Sprite SDK CLI
 ==============
@@ -184,6 +295,8 @@ Usage:
   test-cli [options] <command> [args...]
   test-cli create <sprite-name>
   test-cli destroy <sprite-name>
+  test-cli -sprite <name> policy <subcommand> [args...]
+  test-cli -sprite <name> checkpoint <subcommand> [args...]
 
 Required:
   SPRITES_TOKEN environment variable
@@ -216,6 +329,16 @@ Optional Options:
         File path to write structured JSON logs
   -help
         Show this help message
+
+Policy Commands:
+  policy get                       - Get network policy
+  policy set <json>                - Set network policy
+
+Checkpoint Commands:
+  checkpoint list                  - List all checkpoints
+  checkpoint get <id>              - Get a specific checkpoint
+  checkpoint create <name>         - Create a checkpoint
+  checkpoint restore <id>          - Restore to a checkpoint
 
 Output Modes:
   stdout     - Capture and return stdout only
@@ -259,6 +382,25 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       await destroySprite(client, args[1], logger);
+      return;
+    }
+
+    // Handle policy, checkpoint commands
+    if (args[0] === 'policy') {
+      if (!options.sprite) {
+        console.error('Error: -sprite is required for policy command');
+        process.exit(1);
+      }
+      await handlePolicyCommand(client, options.sprite, args.slice(1), logger);
+      return;
+    }
+
+    if (args[0] === 'checkpoint') {
+      if (!options.sprite) {
+        console.error('Error: -sprite is required for checkpoint command');
+        process.exit(1);
+      }
+      await handleCheckpointCommand(client, options.sprite, args.slice(1), logger);
       return;
     }
 
