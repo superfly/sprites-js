@@ -54,6 +54,8 @@ export class WSCommand extends EventEmitter {
     this.started = true;
 
     return new Promise((resolve, reject) => {
+      let resolved = false;
+
       try {
         this.ws = new WebSocket(this.url, {
           headers: this.headers,
@@ -75,13 +77,14 @@ export class WSCommand extends EventEmitter {
           // Start keepalive ping/pong
           this.startKeepalive();
 
+          resolved = true;
           resolve();
         });
 
         this.ws.addEventListener('error', () => {
           const error = new Error('WebSocket error');
           this.emit('error', error);
-          if (!this.started) {
+          if (!resolved) {
             reject(error);
           }
         });

@@ -478,6 +478,15 @@ async function main(): Promise<void> {
       }
     });
 
+    // Handle errors to prevent unhandled exceptions
+    cmd.on('error', (error) => {
+      logger.logEvent('command_error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      console.error(`Command error: ${error}`);
+      process.exit(1);
+    });
+
     if (options.tty) {
       logger.logEvent('tty_configured', {
         rows: options.ttyRows,
