@@ -1,0 +1,10 @@
+{
+  "name": "sprites-js-examples",
+  "type": "module",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
