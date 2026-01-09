@@ -284,6 +284,173 @@ async function handleCheckpointCommand(
   }
 }
 
+async function handleFilesystemCommand(
+  client: SpritesClient,
+  spriteName: string,
+  args: string[],
+  options: CLIOptions,
+  logger: Logger
+): Promise<void> {
+  if (args.length === 0) {
+    console.error('Error: filesystem subcommand required');
+    process.exit(1);
+  }
+
+  const sprite = client.sprite(spriteName);
+  const fs = sprite.filesystem(options.dir || '/');
+  const subcommand = args[0];
+
+  try {
+    switch (subcommand) {
+      case 'read': {
+        if (!args[1]) {
+          console.error('Error: path required');
+          process.exit(1);
+        }
+        const content = await fs.readFile(args[1], 'utf8');
+        process.stdout.write(content);
+        break;
+      }
+
+      case 'write': {
+        if (!args[1]) {
+          console.error('Error: path required');
+          process.exit(1);
+        }
+        // Read data from stdin or use provided content
+        let data: string;
+        if (args[2]) {
+          data = args[2];
+        } else {
+          // Read from stdin
+          const chunks: Buffer[] = [];
+          for await (const chunk of process.stdin) {
+            chunks.push(chunk);
+          }
+          data = Buffer.concat(chunks).toString('utf8');
+        }
+        await fs.writeFile(args[1], data);
+        console.log(JSON.stringify({ status: 'written', path: args[1] }));
+        break;
+      }
+
+      case 'list': {
+        const path = args[1] || '.';
+        const entries = await fs.readdir(path, { withFileTypes: true });
+        const result = entries.map((entry: any) => ({
+          name: entry.name,
+          isDirectory: entry.isDirectory(),
+          isFile: entry.isFile(),
+          isSymbolicLink: entry.isSymbolicLink(),
+        }));
+        console.log(JSON.stringify(result, null, 2));
+        break;
+      }
+
+      case 'stat': {
+        if (!args[1]) {
+          console.error('Error: path required');
+          process.exit(1);
+        }
+        const stat = await fs.stat(args[1]);
+        console.log(JSON.stringify({
+          size: stat.size,
+          mode: stat.mode.toString(8),
+          mtime: stat.mtime.toISOString(),
+          isDirectory: stat.isDirectory(),
+          isFile: stat.isFile(),
+          isSymbolicLink: stat.isSymbolicLink(),
+        }, null, 2));
+        break;
+      }
+
+      case 'mkdir': {
+        if (!args[1]) {
+          console.error('Error: path required');
+          process.exit(1);
+        }
+        const recursive = args.includes('-p') || args.includes('--recursive');
+        await fs.mkdir(args[1], { recursive });
+        console.log(JSON.stringify({ status: 'created', path: args[1] }));
+        break;
+      }
+
+      case 'rm': {
+        if (!args[1]) {
+          console.error('Error: path required');
+          process.exit(1);
+        }
+        const recursive = args.includes('-r') || args.includes('--recursive');
+        const force = args.includes('-f') || args.includes('--force');
+        await fs.rm(args[1], { recursive, force });
+        console.log(JSON.stringify({ status: 'removed', path: args[1] }));
+        break;
+      }
+
+      case 'rename': {
+        if (!args[1] || !args[2]) {
+          console.error('Error: source and destination paths required');
+          process.exit(1);
+        }
+        await fs.rename(args[1], args[2]);
+        console.log(JSON.stringify({ status: 'renamed', source: args[1], dest: args[2] }));
+        break;
+      }
+
+      case 'copy': {
+        if (!args[1] || !args[2]) {
+          console.error('Error: source and destination paths required');
+          process.exit(1);
+        }
+        const recursive = args.includes('-r') || args.includes('--recursive');
+        await fs.copyFile(args[1], args[2], { recursive });
+        console.log(JSON.stringify({ status: 'copied', source: args[1], dest: args[2] }));
+        break;
+      }
+
+      case 'chmod': {
+        if (!args[1] || !args[2]) {
+          console.error('Error: path and mode required');
+          process.exit(1);
+        }
+        const mode = parseInt(args[2], 8);
+        const recursive = args.includes('-r') || args.includes('--recursive');
+        await fs.chmod(args[1], mode, { recursive });
+        console.log(JSON.stringify({ status: 'chmod', path: args[1], mode: args[2] }));
+        break;
+      }
+
+      case 'exists': {
+        if (!args[1]) {
+          console.error('Error: path required');
+          process.exit(1);
+        }
+        const exists = await fs.exists(args[1]);
+        console.log(JSON.stringify({ exists }));
+        break;
+      }
+
+      default:
+        console.error(`Error: unknown filesystem subcommand: ${subcommand}`);
+        console.error('Available: read, write, list, stat, mkdir, rm, rename, copy, chmod, exists');
+        process.exit(1);
+    }
+  } catch (error: any) {
+    logger.logEvent('fs_command_failed', {
+      subcommand,
+      error: error.message || String(error),
+      code: error.code,
+      path: error.path,
+    });
+    console.error(JSON.stringify({
+      error: error.message || String(error),
+      code: error.code,
+      path: error.path,
+    }));
+    process.exit(1);
+  }
+}
+
 function showHelp(): void {
   console.log(`Sprite SDK CLI
 ==============
@@ -297,6 +464,7 @@ Usage:
   test-cli destroy <sprite-name>
   test-cli -sprite <name> policy <subcommand> [args...]
   test-cli -sprite <name> checkpoint <subcommand> [args...]
+  test-cli -sprite <name> fs <subcommand> [args...]
 
 Required:
   SPRITES_TOKEN environment variable
@@ -308,7 +476,7 @@ Optional Options:
   -base-url string
         Base URL for the sprite API (default: https://api.sprites.dev)
   -dir string
-        Working directory for the command
+        Working directory for the command (also used for fs commands)
   -env string
         Environment variables (comma-separated key=value pairs)
   -tty
@@ -339,6 +507,18 @@ Checkpoint Commands:
   checkpoint get <id>              - Get a specific checkpoint
   checkpoint create <name>         - Create a checkpoint
   checkpoint restore <id>          - Restore to a checkpoint
+
+Filesystem Commands (fs):
+  fs read <path>                   - Read file contents
+  fs write <path> [content]        - Write to file (reads stdin if no content)
+  fs list [path]                   - List directory contents
+  fs stat <path>                   - Get file/directory info
+  fs mkdir <path> [-p]             - Create directory (-p for recursive)
+  fs rm <path> [-r] [-f]           - Remove file/dir (-r recursive, -f force)
+  fs rename <src> <dst>            - Rename/move file
+  fs copy <src> <dst> [-r]         - Copy file/dir (-r for recursive)
+  fs chmod <path> <mode> [-r]      - Change permissions (mode in octal)
+  fs exists <path>                 - Check if path exists
 
 Output Modes:
   stdout     - Capture and return stdout only
@@ -401,6 +581,15 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       await handleCheckpointCommand(client, options.sprite, args.slice(1), logger);
+      return;
+    }
+
+    if (args[0] === 'fs') {
+      if (!options.sprite) {
+        console.error('Error: -sprite is required for fs command');
+        process.exit(1);
+      }
+      await handleFilesystemCommand(client, options.sprite, args.slice(1), options, logger);
       return;
     }
 

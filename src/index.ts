@@ -10,6 +10,7 @@ export { SpriteCommand } from './exec.js';
 export { CheckpointStream, RestoreStream } from './checkpoint.js';
 export { ProxySession, ProxyManager, proxyPort, proxyPorts } from './proxy.js';
 export { ServiceLogStream } from './services.js';
+export { SpriteFilesystem } from './filesystem.js';
 
 export type {
   ClientOptions,
@@ -39,7 +40,15 @@ export type {
   ServiceLogEvent,
   PolicyRule,
   NetworkPolicy,
+  Stats,
+  Dirent,
+  FilesystemErrorCode,
+  ReaddirOptions,
+  MkdirOptions,
+  RmOptions,
+  CopyFileOptions,
+  ChmodOptions,
 } from './types.js';
 
-export { ExecError, StreamID } from './types.js';
+export { ExecError, StreamID, FilesystemError } from './types.js';
 

@@ -17,6 +17,7 @@ import {
   signalService,
 } from './services.js';
 import { getNetworkPolicy, updateNetworkPolicy } from './policy.js';
+import { SpriteFilesystem } from './filesystem.js';
 import type {
   SpawnOptions,
   ExecOptions,
@@ -379,6 +380,31 @@ export class Sprite {
    */
   async updateNetworkPolicy(policy: NetworkPolicy): Promise<void> {
     return updateNetworkPolicy(this.client, this.name, policy);
+  }
+
+  // ========== Filesystem API ==========
+
+  /**
+   * Get a filesystem interface for this sprite
+   * @param workingDir - Optional working directory (default: "/")
+   * @returns SpriteFilesystem instance for file operations
+   *
+   * @example
+   * ```typescript
+   * const fs = sprite.filesystem("/app");
+   * await fs.readFile("config.json", "utf8");
+   * await fs.writeFile("output.txt", "data");
+   * await fs.readdir("/app", { withFileTypes: true });
+   * await fs.mkdir("deep/path", { recursive: true });
+   * await fs.rm("file.txt");
+   * await fs.stat("file.txt");
+   * await fs.rename("old.txt", "new.txt");
+   * await fs.copyFile("src.txt", "dst.txt");
+   * await fs.chmod("script.sh", 0o755);
+   * ```
+   */
+  filesystem(workingDir: string = '/'): SpriteFilesystem {
+    return new SpriteFilesystem(this.client, this.name, workingDir);
   }
 }
 

@@ -398,3 +398,192 @@ export interface NetworkPolicy {
   rules: PolicyRule[];
 }
 
+// ========== Filesystem Types ==========
+
+/**
+ * File statistics (matches Node.js fs.Stats interface subset)
+ */
+export interface Stats {
+  /** File size in bytes */
+  size: number;
+  /** File mode (permissions) */
+  mode: number;
+  /** Last modified time */
+  mtime: Date;
+  /** Last access time */
+  atime: Date;
+  /** Creation time */
+  birthtime: Date;
+  /** True if this is a directory */
+  isDirectory(): boolean;
+  /** True if this is a regular file */
+  isFile(): boolean;
+  /** True if this is a symbolic link */
+  isSymbolicLink(): boolean;
+}
+
+/**
+ * Directory entry (matches Node.js fs.Dirent interface)
+ */
+export interface Dirent {
+  /** Entry name (file or directory name) */
+  name: string;
+  /** Parent directory path */
+  parentPath: string;
+  /** True if this is a directory */
+  isDirectory(): boolean;
+  /** True if this is a regular file */
+  isFile(): boolean;
+  /** True if this is a symbolic link */
+  isSymbolicLink(): boolean;
+}
+
+/**
+ * Error codes for filesystem operations
+ */
+export type FilesystemErrorCode =
+  | 'ENOENT'    // File not found
+  | 'EEXIST'    // File already exists
+  | 'ENOTDIR'   // Not a directory
+  | 'EISDIR'    // Is a directory
+  | 'EACCES'    // Permission denied
+  | 'ENOTEMPTY' // Directory not empty
+  | 'EINVAL'    // Invalid argument
+  | 'EIO'       // I/O error
+  | 'UNKNOWN';  // Unknown error
+
+/**
+ * Filesystem error with code and path information
+ */
+export class FilesystemError extends Error {
+  constructor(
+    message: string,
+    public readonly code: FilesystemErrorCode,
+    public readonly path: string,
+    public readonly syscall?: string
+  ) {
+    super(message);
+    this.name = 'FilesystemError';
+  }
+}
+
+/**
+ * Options for readdir
+ */
+export interface ReaddirOptions {
+  /** If true, returns Dirent objects instead of strings */
+  withFileTypes?: boolean;
+  /** Encoding for file names (default: 'utf8') */
+  encoding?: BufferEncoding;
+}
+
+/**
+ * Options for mkdir
+ */
+export interface MkdirOptions {
+  /** File mode (permissions), default 0o777 */
+  mode?: number;
+  /** Create parent directories as needed */
+  recursive?: boolean;
+}
+
+/**
+ * Options for rm/rmdir
+ */
+export interface RmOptions {
+  /** If true, no error if path doesn't exist */
+  force?: boolean;
+  /** Recursively remove directory contents */
+  recursive?: boolean;
+}
+
+/**
+ * Options for copyFile
+ */
+export interface CopyFileOptions {
+  /** Recursively copy directory contents */
+  recursive?: boolean;
+}
+
+/**
+ * Options for chmod
+ */
+export interface ChmodOptions {
+  /** Recursively change mode */
+  recursive?: boolean;
+}
+
+/**
+ * Internal: File entry from server list response
+ */
+export interface FsEntry {
+  name: string;
+  path: string;
+  type: string;
+  size: number;
+  mode: string;
+  modTime: string;
+  isDir: boolean;
+}
+
+/**
+ * Internal: List response from server
+ */
+export interface FsListResponse {
+  path: string;
+  entries: FsEntry[];
+  count: number;
+}
+
+/**
+ * Internal: Write response from server
+ */
+export interface FsWriteResponse {
+  path: string;
+  size: number;
+  mode: string;
+}
+
+/**
+ * Internal: Delete response from server
+ */
+export interface FsDeleteResponse {
+  deleted: string[];
+  count: number;
+}
+
+/**
+ * Internal: Rename response from server
+ */
+export interface FsRenameResponse {
+  source: string;
+  dest: string;
+}
+
+/**
+ * Internal: Copy response from server
+ */
+export interface FsCopyResponse {
+  source: string;
+  dest: string;
+  count: number;
+}
+
+/**
+ * Internal: Chmod response from server
+ */
+export interface FsChmodResponse {
+  path: string;
+  mode: string;
+  count: number;
+}
+
+/**
+ * Internal: Error response from server
+ */
+export interface FsErrorResponse {
+  error: string;
+  code?: string;
+  path?: string;
+}
+
