@@ -451,6 +451,183 @@ async function handleFilesystemCommand(
   }
 }
 
+// Parse flags from args array (Go-style flags like -path, -content, etc.)
+function parseFsFlags(args: string[]): Record<string, string | boolean> {
+  const flags: Record<string, string | boolean> = {};
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i];
+    if (arg === '-path') {
+      flags.path = args[++i];
+    } else if (arg === '-content') {
+      flags.content = args[++i];
+    } else if (arg === '-parents') {
+      flags.parents = true;
+    } else if (arg === '-recursive') {
+      flags.recursive = true;
+    } else if (arg === '-old') {
+      flags.old = args[++i];
+    } else if (arg === '-new') {
+      flags.new = args[++i];
+    } else if (arg === '-src') {
+      flags.src = args[++i];
+    } else if (arg === '-dst') {
+      flags.dst = args[++i];
+    } else if (arg === '-mode') {
+      flags.mode = args[++i];
+    }
+    i++;
+  }
+  return flags;
+}
+
+async function handleHyphenatedFsCommand(
+  client: SpritesClient,
+  spriteName: string,
+  args: string[],
+  options: CLIOptions,
+  logger: Logger
+): Promise<void> {
+  const command = args[0];
+  const flags = parseFsFlags(args.slice(1));
+  const sprite = client.sprite(spriteName);
+  const fs = sprite.filesystem(options.dir || '/');
+
+  try {
+    switch (command) {
+      case 'fs-write': {
+        const path = flags.path as string;
+        if (!path) {
+          console.error('Error: -path is required for fs-write command');
+          process.exit(1);
+        }
+        const content = (flags.content as string) || '';
+        await fs.writeFile(path, content);
+        console.log(JSON.stringify({ status: 'written', path }));
+        break;
+      }
+
+      case 'fs-read': {
+        const path = flags.path as string;
+        if (!path) {
+          console.error('Error: -path is required for fs-read command');
+          process.exit(1);
+        }
+        const content = await fs.readFile(path, 'utf8');
+        process.stdout.write(content);
+        break;
+      }
+
+      case 'fs-list': {
+        const path = (flags.path as string) || '.';
+        const entries = await fs.readdir(path, { withFileTypes: true });
+        const result = entries.map((entry: any) => ({
+          name: entry.name,
+          isDirectory: entry.isDirectory(),
+          isFile: entry.isFile(),
+          isSymbolicLink: entry.isSymbolicLink(),
+        }));
+        console.log(JSON.stringify(result, null, 2));
+        break;
+      }
+
+      case 'fs-stat': {
+        const path = flags.path as string;
+        if (!path) {
+          console.error('Error: -path is required for fs-stat command');
+          process.exit(1);
+        }
+        const stat = await fs.stat(path);
+        console.log(JSON.stringify({
+          size: stat.size,
+          mode: stat.mode.toString(8),
+          mtime: stat.mtime.toISOString(),
+          isDirectory: stat.isDirectory(),
+          isFile: stat.isFile(),
+          isSymbolicLink: stat.isSymbolicLink(),
+        }, null, 2));
+        break;
+      }
+
+      case 'fs-mkdir': {
+        const path = flags.path as string;
+        if (!path) {
+          console.error('Error: -path is required for fs-mkdir command');
+          process.exit(1);
+        }
+        await fs.mkdir(path, { recursive: !!flags.parents });
+        console.log(JSON.stringify({ status: 'created', path }));
+        break;
+      }
+
+      case 'fs-rm': {
+        const path = flags.path as string;
+        if (!path) {
+          console.error('Error: -path is required for fs-rm command');
+          process.exit(1);
+        }
+        await fs.rm(path, { recursive: !!flags.recursive, force: true });
+        console.log(JSON.stringify({ status: 'removed', path }));
+        break;
+      }
+
+      case 'fs-rename': {
+        const oldPath = flags.old as string;
+        const newPath = flags.new as string;
+        if (!oldPath || !newPath) {
+          console.error('Error: -old and -new are required for fs-rename command');
+          process.exit(1);
+        }
+        await fs.rename(oldPath, newPath);
+        console.log(JSON.stringify({ status: 'renamed', source: oldPath, dest: newPath }));
+        break;
+      }
+
+      case 'fs-copy': {
+        const src = flags.src as string;
+        const dst = flags.dst as string;
+        if (!src || !dst) {
+          console.error('Error: -src and -dst are required for fs-copy command');
+          process.exit(1);
+        }
+        await fs.copyFile(src, dst, { recursive: !!flags.recursive });
+        console.log(JSON.stringify({ status: 'copied', source: src, dest: dst }));
+        break;
+      }
+
+      case 'fs-chmod': {
+        const path = flags.path as string;
+        const modeStr = flags.mode as string;
+        if (!path || !modeStr) {
+          console.error('Error: -path and -mode are required for fs-chmod command');
+          process.exit(1);
+        }
+        const mode = parseInt(modeStr, 8);
+        await fs.chmod(path, mode, { recursive: !!flags.recursive });
+        console.log(JSON.stringify({ status: 'chmod', path, mode: modeStr }));
+        break;
+      }
+
+      default:
+        console.error(`Error: unknown fs command: ${command}`);
+        process.exit(1);
+    }
+  } catch (error: any) {
+    logger.logEvent('fs_command_failed', {
+      command,
+      error: error.message || String(error),
+      code: error.code,
+      path: error.path,
+    });
+    console.error(JSON.stringify({
+      error: error.message || String(error),
+      code: error.code,
+      path: error.path,
+    }));
+    process.exit(1);
+  }
+}
+
 function showHelp(): void {
   console.log(`Sprite SDK CLI
 ==============
@@ -590,6 +767,16 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       await handleFilesystemCommand(client, options.sprite, args.slice(1), options, logger);
+      return;
+    }
+
+    // Handle hyphenated fs commands (fs-write, fs-read, etc.) for test harness compatibility
+    if (args[0]?.startsWith('fs-')) {
+      if (!options.sprite) {
+        console.error(`Error: -sprite is required for ${args[0]} command`);
+        process.exit(1);
+      }
+      await handleHyphenatedFsCommand(client, options.sprite, args, options, logger);
       return;
     }
 
