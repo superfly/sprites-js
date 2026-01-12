@@ -9,6 +9,15 @@ const spriteName = process.env.SPRITE_NAME!;
 const client = new SpritesClient(token);
 const sprite = client.sprite(spriteName);
 
-const result = await sprite.exec('echo', ['hello', 'world']);
+// Start a command that runs for 30s (TTY sessions stay alive after disconnect)
+const cmd = sprite.createSession('python', [
+  '-c',
+  "import time; print('Server ready on port 8080', flush=True); time.sleep(30)"
+]);
 
-process.stdout.write(result.stdout);
+cmd.stdout.on('data', (chunk: Buffer) => {
+  process.stdout.write(chunk);
+});
+
+// Exit after 2 seconds (session keeps running since it's detachable)
+setTimeout(() => process.exit(0), 2000);
