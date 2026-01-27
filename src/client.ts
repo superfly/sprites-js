@@ -3,6 +3,7 @@
  */
 
 import { Sprite } from './sprite.js';
+import { parseAPIError } from './types.js';
 import type {
   ClientOptions,
   SpriteConfig,
@@ -53,6 +54,9 @@ export class SpritesClient {
 
     if (!response.ok) {
       const body = await response.text();
+      const headers = Object.fromEntries(response.headers.entries());
+      const apiErr = parseAPIError(response.status, body, headers);
+      if (apiErr) throw apiErr;
       throw new Error(`Failed to create sprite (status ${response.status}): ${body}`);
     }
 
@@ -72,12 +76,11 @@ export class SpritesClient {
       signal: AbortSignal.timeout(this.timeout),
     });
 
-    if (response.status === 404) {
-      throw new Error(`Sprite not found: ${name}`);
-    }
-
     if (!response.ok) {
       const body = await response.text();
+      const headers = Object.fromEntries(response.headers.entries());
+      const apiErr = parseAPIError(response.status, body, headers);
+      if (apiErr) throw apiErr;
       throw new Error(`Failed to get sprite (status ${response.status}): ${body}`);
     }
 
@@ -107,6 +110,9 @@ export class SpritesClient {
 
     if (!response.ok) {
       const body = await response.text();
+      const headers = Object.fromEntries(response.headers.entries());
+      const apiErr = parseAPIError(response.status, body, headers);
+      if (apiErr) throw apiErr;
       throw new Error(`Failed to list sprites (status ${response.status}): ${body}`);
     }
 
@@ -153,6 +159,9 @@ export class SpritesClient {
 
     if (!response.ok && response.status !== 204) {
       const body = await response.text();
+      const headers = Object.fromEntries(response.headers.entries());
+      const apiErr = parseAPIError(response.status, body, headers);
+      if (apiErr) throw apiErr;
       throw new Error(`Failed to delete sprite (status ${response.status}): ${body}`);
     }
   }
@@ -171,6 +180,9 @@ export class SpritesClient {
 
     if (!response.ok && response.status !== 204) {
       const body = await response.text();
+      const headers = Object.fromEntries(response.headers.entries());
+      const apiErr = parseAPIError(response.status, body, headers);
+      if (apiErr) throw apiErr;
       throw new Error(`Failed to upgrade sprite (status ${response.status}): ${body}`);
     }
   }
@@ -193,6 +205,9 @@ export class SpritesClient {
 
     if (!response.ok) {
       const body = await response.text();
+      const headers = Object.fromEntries(response.headers.entries());
+      const apiErr = parseAPIError(response.status, body, headers);
+      if (apiErr) throw apiErr;
       throw new Error(`Failed to update URL settings (status ${response.status}): ${body}`);
     }
   }
@@ -228,6 +243,9 @@ export class SpritesClient {
 
     if (!response.ok) {
       const text = await response.text();
+      const headers = Object.fromEntries(response.headers.entries());
+      const apiErr = parseAPIError(response.status, text, headers);
+      if (apiErr) throw apiErr;
       throw new Error(`API returned status ${response.status}: ${text}`);
     }
 

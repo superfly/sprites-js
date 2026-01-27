@@ -5,7 +5,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { SpritesClient } from './client.js';
-import { ExecError } from './types.js';
+import {
+  ExecError,
+  APIError,
+  parseAPIError,
+  ERR_CODE_CREATION_RATE_LIMITED,
+  ERR_CODE_CONCURRENT_LIMIT_EXCEEDED,
+} from './types.js';
 
 describe('WebSocket URL Building', () => {
   it('should build correct WebSocket URL for basic command', () => {
@@ -149,6 +155,213 @@ describe('Client', () => {
   it('should strip trailing slash from base URL', () => {
     const client = new SpritesClient('test-token', { baseURL: 'http://localhost:8080/' });
     assert.strictEqual(client.baseURL, 'http://localhost:8080');
+  });
+});
+
+describe('APIError', () => {
+  it('should create basic error', () => {
+    const err = new APIError('Something went wrong', { statusCode: 500 });
+    assert.strictEqual(err.message, 'Something went wrong');
+    assert.strictEqual(err.statusCode, 500);
+    assert.strictEqual(err.name, 'APIError');
+  });
+
+  it('should create error with all fields', () => {
+    const err = new APIError('Rate limit exceeded', {
+      errorCode: 'sprite_creation_rate_limited',
+      statusCode: 429,
+      limit: 10,
+      windowSeconds: 60,
+      retryAfterSeconds: 30,
+      currentCount: 5,
+      upgradeAvailable: true,
+      upgradeUrl: 'https://fly.io/upgrade',
+      retryAfterHeader: 25,
+      rateLimitLimit: 100,
+      rateLimitRemaining: 0,
+      rateLimitReset: 1706400000,
+    });
+
+    assert.strictEqual(err.statusCode, 429);
+    assert.strictEqual(err.errorCode, 'sprite_creation_rate_limited');
+    assert.strictEqual(err.limit, 10);
+    assert.strictEqual(err.windowSeconds, 60);
+    assert.strictEqual(err.retryAfterSeconds, 30);
+    assert.strictEqual(err.currentCount, 5);
+    assert.strictEqual(err.upgradeAvailable, true);
+    assert.strictEqual(err.upgradeUrl, 'https://fly.io/upgrade');
+    assert.strictEqual(err.retryAfterHeader, 25);
+    assert.strictEqual(err.rateLimitLimit, 100);
+    assert.strictEqual(err.rateLimitRemaining, 0);
+    assert.strictEqual(err.rateLimitReset, 1706400000);
+  });
+
+  it('should detect rate limit errors', () => {
+    const err429 = new APIError('Rate limited', { statusCode: 429 });
+    const err500 = new APIError('Server error', { statusCode: 500 });
+
+    assert.strictEqual(err429.isRateLimitError(), true);
+    assert.strictEqual(err500.isRateLimitError(), false);
+  });
+
+  it('should detect creation rate limited errors', () => {
+    const errCreation = new APIError('Rate limited', {
+      statusCode: 429,
+      errorCode: ERR_CODE_CREATION_RATE_LIMITED,
+    });
+    const errConcurrent = new APIError('Limit exceeded', {
+      statusCode: 429,
+      errorCode: ERR_CODE_CONCURRENT_LIMIT_EXCEEDED,
+    });
+
+    assert.strictEqual(errCreation.isCreationRateLimited(), true);
+    assert.strictEqual(errConcurrent.isCreationRateLimited(), false);
+  });
+
+  it('should detect concurrent limit exceeded errors', () => {
+    const errConcurrent = new APIError('Limit exceeded', {
+      statusCode: 429,
+      errorCode: ERR_CODE_CONCURRENT_LIMIT_EXCEEDED,
+    });
+    const errCreation = new APIError('Rate limited', {
+      statusCode: 429,
+      errorCode: ERR_CODE_CREATION_RATE_LIMITED,
+    });
+
+    assert.strictEqual(errConcurrent.isConcurrentLimitExceeded(), true);
+    assert.strictEqual(errCreation.isConcurrentLimitExceeded(), false);
+  });
+
+  it('should prefer JSON retry_after_seconds over header', () => {
+    const err = new APIError('Rate limited', {
+      statusCode: 429,
+      retryAfterSeconds: 30,
+      retryAfterHeader: 60,
+    });
+
+    assert.strictEqual(err.getRetryAfterSeconds(), 30);
+  });
+
+  it('should fall back to header for retry_after_seconds', () => {
+    const err = new APIError('Rate limited', {
+      statusCode: 429,
+      retryAfterHeader: 60,
+    });
+
+    assert.strictEqual(err.getRetryAfterSeconds(), 60);
+  });
+
+  it('should return undefined when no retry_after is set', () => {
+    const err = new APIError('Rate limited', { statusCode: 429 });
+    assert.strictEqual(err.getRetryAfterSeconds(), undefined);
+  });
+});
+
+describe('parseAPIError', () => {
+  it('should return undefined for success status codes', () => {
+    assert.strictEqual(parseAPIError(200, 'OK'), undefined);
+    assert.strictEqual(parseAPIError(201, 'Created'), undefined);
+    assert.strictEqual(parseAPIError(204, ''), undefined);
+    assert.strictEqual(parseAPIError(301, 'Moved'), undefined);
+    assert.strictEqual(parseAPIError(399, 'Something'), undefined);
+  });
+
+  it('should parse JSON error body', () => {
+    const body = JSON.stringify({
+      error: 'sprite_creation_rate_limited',
+      message: 'Rate limit exceeded',
+      limit: 10,
+      window_seconds: 60,
+      retry_after_seconds: 30,
+      upgrade_available: true,
+      upgrade_url: 'https://fly.io/upgrade',
+    });
+
+    const err = parseAPIError(429, body);
+    assert.ok(err);
+    assert.strictEqual(err.statusCode, 429);
+    assert.strictEqual(err.errorCode, 'sprite_creation_rate_limited');
+    assert.strictEqual(err.message, 'Rate limit exceeded');
+    assert.strictEqual(err.limit, 10);
+    assert.strictEqual(err.windowSeconds, 60);
+    assert.strictEqual(err.retryAfterSeconds, 30);
+    assert.strictEqual(err.upgradeAvailable, true);
+    assert.strictEqual(err.upgradeUrl, 'https://fly.io/upgrade');
+  });
+
+  it('should parse rate limit headers', () => {
+    const headers = {
+      'Retry-After': '30',
+      'X-RateLimit-Limit': '100',
+      'X-RateLimit-Remaining': '0',
+      'X-RateLimit-Reset': '1706400000',
+    };
+    const body = '{"error": "rate_limited", "message": "Too many requests"}';
+
+    const err = parseAPIError(429, body, headers);
+    assert.ok(err);
+    assert.strictEqual(err.retryAfterHeader, 30);
+    assert.strictEqual(err.rateLimitLimit, 100);
+    assert.strictEqual(err.rateLimitRemaining, 0);
+    assert.strictEqual(err.rateLimitReset, 1706400000);
+  });
+
+  it('should parse lowercase headers', () => {
+    const headers = {
+      'retry-after': '30',
+      'x-ratelimit-limit': '100',
+    };
+    const body = '{"message": "Rate limited"}';
+
+    const err = parseAPIError(429, body, headers);
+    assert.ok(err);
+    assert.strictEqual(err.retryAfterHeader, 30);
+    assert.strictEqual(err.rateLimitLimit, 100);
+  });
+
+  it('should handle non-JSON body', () => {
+    const body = 'Internal Server Error: something went wrong';
+
+    const err = parseAPIError(500, body);
+    assert.ok(err);
+    assert.strictEqual(err.statusCode, 500);
+    assert.strictEqual(err.message, body);
+  });
+
+  it('should handle empty body', () => {
+    const err = parseAPIError(500, '');
+    assert.ok(err);
+    assert.strictEqual(err.statusCode, 500);
+    assert.ok(err.message.includes('API error'));
+  });
+
+  it('should handle invalid header values', () => {
+    const headers = {
+      'Retry-After': 'not-a-number',
+      'X-RateLimit-Limit': 'invalid',
+    };
+    const body = '{"message": "Error"}';
+
+    const err = parseAPIError(429, body, headers);
+    assert.ok(err);
+    assert.strictEqual(err.retryAfterHeader, undefined);
+    assert.strictEqual(err.rateLimitLimit, undefined);
+  });
+
+  it('should parse concurrent limit error', () => {
+    const body = JSON.stringify({
+      error: 'concurrent_sprite_limit_exceeded',
+      message: 'Too many concurrent sprites',
+      current_count: 5,
+      limit: 5,
+    });
+
+    const err = parseAPIError(429, body);
+    assert.ok(err);
+    assert.strictEqual(err.errorCode, ERR_CODE_CONCURRENT_LIMIT_EXCEEDED);
+    assert.strictEqual(err.currentCount, 5);
+    assert.strictEqual(err.limit, 5);
+    assert.strictEqual(err.isConcurrentLimitExceeded(), true);
   });
 });
 
