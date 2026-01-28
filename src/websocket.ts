@@ -1,5 +1,9 @@
 /**
  * WebSocket communication layer for command execution
+ *
+ * Note: The standard WebSocket API does not expose HTTP error responses
+ * on connection failure. For structured APIError handling, see the HTTP
+ * client methods in client.ts which use parseAPIError.
  */
 
 import { EventEmitter } from 'node:events';

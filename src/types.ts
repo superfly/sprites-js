@@ -202,6 +202,197 @@ export enum StreamID {
 }
 
 /**
+ * Error codes returned by the API for rate limiting
+ */
+export const ERR_CODE_CREATION_RATE_LIMITED = 'sprite_creation_rate_limited';
+export const ERR_CODE_CONCURRENT_LIMIT_EXCEEDED = 'concurrent_sprite_limit_exceeded';
+
+/**
+ * Structured error response from the Sprites API
+ */
+export class APIError extends Error {
+  /** Machine-readable error code (e.g., "sprite_creation_rate_limited") */
+  readonly errorCode?: string;
+  /** HTTP status code */
+  readonly statusCode?: number;
+  /** Rate limit value (e.g., 10 sprites per minute) */
+  readonly limit?: number;
+  /** Rate limit window in seconds */
+  readonly windowSeconds?: number;
+  /** Number of seconds to wait before retrying (from JSON body) */
+  readonly retryAfterSeconds?: number;
+  /** Current count (for concurrent limit errors) */
+  readonly currentCount?: number;
+  /** Whether an upgrade is available */
+  readonly upgradeAvailable?: boolean;
+  /** URL to upgrade the account (for rate limit errors) */
+  readonly upgradeUrl?: string;
+  /** Retry-After header value in seconds */
+  readonly retryAfterHeader?: number;
+  /** X-RateLimit-Limit header value */
+  readonly rateLimitLimit?: number;
+  /** X-RateLimit-Remaining header value */
+  readonly rateLimitRemaining?: number;
+  /** X-RateLimit-Reset header value (Unix timestamp) */
+  readonly rateLimitReset?: number;
+
+  constructor(
+    message: string,
+    options: {
+      errorCode?: string;
+      statusCode?: number;
+      limit?: number;
+      windowSeconds?: number;
+      retryAfterSeconds?: number;
+      currentCount?: number;
+      upgradeAvailable?: boolean;
+      upgradeUrl?: string;
+      retryAfterHeader?: number;
+      rateLimitLimit?: number;
+      rateLimitRemaining?: number;
+      rateLimitReset?: number;
+    } = {}
+  ) {
+    super(message);
+    this.name = 'APIError';
+    this.errorCode = options.errorCode;
+    this.statusCode = options.statusCode;
+    this.limit = options.limit;
+    this.windowSeconds = options.windowSeconds;
+    this.retryAfterSeconds = options.retryAfterSeconds;
+    this.currentCount = options.currentCount;
+    this.upgradeAvailable = options.upgradeAvailable;
+    this.upgradeUrl = options.upgradeUrl;
+    this.retryAfterHeader = options.retryAfterHeader;
+    this.rateLimitLimit = options.rateLimitLimit;
+    this.rateLimitRemaining = options.rateLimitRemaining;
+    this.rateLimitReset = options.rateLimitReset;
+  }
+
+  /** Returns true if this is a 429 rate limit error */
+  isRateLimitError(): boolean {
+    return this.statusCode === 429;
+  }
+
+  /** Returns true if this is a sprite creation rate limit error */
+  isCreationRateLimited(): boolean {
+    return this.errorCode === ERR_CODE_CREATION_RATE_LIMITED;
+  }
+
+  /** Returns true if this is a concurrent sprite limit error */
+  isConcurrentLimitExceeded(): boolean {
+    return this.errorCode === ERR_CODE_CONCURRENT_LIMIT_EXCEEDED;
+  }
+
+  /** Returns the number of seconds to wait before retrying.
+   * Prefers the JSON field, falling back to the header value.
+   */
+  getRetryAfterSeconds(): number | undefined {
+    if (this.retryAfterSeconds !== undefined && this.retryAfterSeconds > 0) {
+      return this.retryAfterSeconds;
+    }
+    return this.retryAfterHeader;
+  }
+}
+
+/**
+ * Parse a structured API error from an HTTP response.
+ * Returns undefined if statusCode < 400.
+ */
+export function parseAPIError(
+  statusCode: number,
+  body: string | undefined,
+  headers?: Record<string, string>
+): APIError | undefined {
+  if (statusCode < 400) {
+    return undefined;
+  }
+
+  headers = headers || {};
+
+  // Parse rate limit headers (check both lower and original case)
+  const getHeader = (name: string): string | undefined => {
+    return headers![name.toLowerCase()] || headers![name];
+  };
+
+  let retryAfterHeader: number | undefined;
+  let rateLimitLimit: number | undefined;
+  let rateLimitRemaining: number | undefined;
+  let rateLimitReset: number | undefined;
+
+  const ra = getHeader('Retry-After');
+  if (ra) {
+    const v = parseInt(ra, 10);
+    if (!isNaN(v)) retryAfterHeader = v;
+  }
+
+  const rl = getHeader('X-RateLimit-Limit');
+  if (rl) {
+    const v = parseInt(rl, 10);
+    if (!isNaN(v)) rateLimitLimit = v;
+  }
+
+  const rr = getHeader('X-RateLimit-Remaining');
+  if (rr) {
+    const v = parseInt(rr, 10);
+    if (!isNaN(v)) rateLimitRemaining = v;
+  }
+
+  const rs = getHeader('X-RateLimit-Reset');
+  if (rs) {
+    const v = parseInt(rs, 10);
+    if (!isNaN(v)) rateLimitReset = v;
+  }
+
+  // Try to parse JSON body
+  let message = '';
+  let errorCode: string | undefined;
+  let limit: number | undefined;
+  let windowSeconds: number | undefined;
+  let retryAfterSeconds: number | undefined;
+  let currentCount: number | undefined;
+  let upgradeAvailable: boolean | undefined;
+  let upgradeUrl: string | undefined;
+
+  if (body) {
+    try {
+      const data = JSON.parse(body);
+      errorCode = data.error;
+      message = data.message || '';
+      limit = data.limit;
+      windowSeconds = data.window_seconds;
+      retryAfterSeconds = data.retry_after_seconds;
+      currentCount = data.current_count;
+      upgradeAvailable = data.upgrade_available;
+      upgradeUrl = data.upgrade_url;
+    } catch {
+      // Use raw body as message
+      message = body;
+    }
+  }
+
+  // Fallback message if nothing was parsed
+  if (!message && !errorCode) {
+    message = `API error (status ${statusCode})`;
+  }
+
+  return new APIError(message || errorCode || `API error (status ${statusCode})`, {
+    errorCode,
+    statusCode,
+    limit,
+    windowSeconds,
+    retryAfterSeconds,
+    currentCount,
+    upgradeAvailable,
+    upgradeUrl,
+    retryAfterHeader,
+    rateLimitLimit,
+    rateLimitRemaining,
+    rateLimitReset,
+  });
+}
+
+/**
  * Error thrown when a command exits with a non-zero code
  */
 export class ExecError extends Error {

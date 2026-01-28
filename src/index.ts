@@ -50,5 +50,13 @@ export type {
   ChmodOptions,
 } from './types.js';
 
-export { ExecError, StreamID, FilesystemError } from './types.js';
+export {
+  ExecError,
+  StreamID,
+  FilesystemError,
+  APIError,
+  parseAPIError,
+  ERR_CODE_CREATION_RATE_LIMITED,
+  ERR_CODE_CONCURRENT_LIMIT_EXCEEDED,
+} from './types.js';
 
