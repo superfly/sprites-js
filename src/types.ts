@@ -10,6 +10,8 @@ export interface ClientOptions {
   baseURL?: string;
   /** HTTP request timeout in milliseconds (default: 30000) */
   timeout?: number;
+  /** Enable control mode for multiplexed WebSocket operations */
+  controlMode?: boolean;
 }
 
 /**

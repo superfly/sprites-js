@@ -18,6 +18,7 @@ import {
 } from './services.js';
 import { getNetworkPolicy, updateNetworkPolicy } from './policy.js';
 import { SpriteFilesystem } from './filesystem.js';
+import { ControlConnection, getControlConnection, closeControlConnection } from './control.js';
 import type {
   SpawnOptions,
   ExecOptions,
@@ -405,6 +406,29 @@ export class Sprite {
    */
   filesystem(workingDir: string = '/'): SpriteFilesystem {
     return new SpriteFilesystem(this.client, this.name, workingDir);
+  }
+
+  // ========== Control Connection API ==========
+
+  /**
+   * Check if control mode is enabled for this sprite
+   */
+  useControlMode(): boolean {
+    return this.client.controlMode;
+  }
+
+  /**
+   * Get or create a control connection for multiplexed operations
+   */
+  async getControlConnection(): Promise<ControlConnection> {
+    return getControlConnection(this);
+  }
+
+  /**
+   * Close the control connection if open
+   */
+  closeControlConnection(): void {
+    closeControlConnection(this);
   }
 }
 

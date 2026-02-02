@@ -21,11 +21,13 @@ export class SpritesClient {
   readonly baseURL: string;
   readonly token: string;
   private readonly timeout: number;
+  readonly controlMode: boolean;
 
   constructor(token: string, options: ClientOptions = {}) {
     this.token = token;
     this.baseURL = (options.baseURL || 'https://api.sprites.dev').replace(/\/+$/, '');
     this.timeout = options.timeout || 30000;
+    this.controlMode = options.controlMode || false;
   }
 
   /**
