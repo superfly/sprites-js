@@ -431,8 +431,10 @@ export class ControlConnection extends EventEmitter {
   }
 }
 
-// Default pool size
-const DEFAULT_POOL_SIZE = 5;
+// Pool configuration (matches Go SDK)
+const MAX_POOL_SIZE = 100; // Sanity cap - checkout fails if pool is full
+const POOL_DRAIN_THRESHOLD = 20; // When release and size > this, drain idle conns
+const POOL_DRAIN_TARGET = 10; // Drain down to this many conns when draining
 
 /**
  * ControlPool manages a pool of control connections for concurrent operations.
@@ -447,7 +449,7 @@ export class ControlPool {
 
   constructor(
     private sprite: Sprite,
-    private maxSize: number = DEFAULT_POOL_SIZE
+    private maxSize: number = MAX_POOL_SIZE
   ) {}
 
   /**
@@ -494,6 +496,40 @@ export class ControlPool {
       const waiter = this.waiters.shift()!;
       cc.setActive(true);
       waiter.resolve(cc);
+      return;
+    }
+
+    // Try to drain idle connections if pool is large
+    this.tryDrain();
+  }
+
+  /**
+   * Drain idle connections when pool is large.
+   * When pool size exceeds POOL_DRAIN_THRESHOLD, close idle connections
+   * down to POOL_DRAIN_TARGET.
+   */
+  private tryDrain(): void {
+    if (this.closed || this.conns.length <= POOL_DRAIN_THRESHOLD) {
+      return;
+    }
+
+    // Find idle connections (not active, not closed)
+    const idleConns = this.conns.filter(
+      (cc) => !cc.isActive() && !cc.isClosed()
+    );
+
+    const toClose = this.conns.length - POOL_DRAIN_TARGET;
+    if (toClose <= 0) {
+      return;
+    }
+
+    // Close idle connections
+    let closed = 0;
+    for (const cc of idleConns) {
+      if (closed >= toClose) break;
+      cc.close();
+      this.conns = this.conns.filter((c) => c !== cc);
+      closed++;
     }
   }
 
