@@ -18,7 +18,7 @@ import {
 } from './services.js';
 import { getNetworkPolicy, updateNetworkPolicy } from './policy.js';
 import { SpriteFilesystem } from './filesystem.js';
-import { ControlConnection, getControlConnection, closeControlConnection } from './control.js';
+import { ControlConnection, getControlConnection, closeControlConnection, hasControlConnection } from './control.js';
 import type {
   SpawnOptions,
   ExecOptions,
@@ -429,6 +429,16 @@ export class Sprite {
    */
   closeControlConnection(): void {
     closeControlConnection(this);
+  }
+
+  /**
+   * Check if this sprite has an active control connection.
+   * This can be used to verify that control mode is being used.
+   */
+  hasControlConnection(): boolean {
+    // Import the WeakMap from control module to check
+    // We need to expose a check function
+    return hasControlConnection(this);
   }
 }
 

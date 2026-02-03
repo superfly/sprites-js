@@ -123,8 +123,9 @@ export class OpConn extends EventEmitter {
           this.emit('stderr', payload);
           break;
         case StreamID.Exit:
+          // Store exit code but DON'T close yet
+          // Wait for op.complete message to ensure proper sequencing
           this.exitCode = payload.length > 0 ? payload[0] : 0;
-          this.close();
           this.emit('exit', this.exitCode);
           break;
       }
@@ -203,11 +204,33 @@ export class ControlConnection extends EventEmitter {
   private opConn: OpConn | null = null;
   private closed: boolean = false;
   private closeError: Error | null = null;
+  private poolActive: boolean = false; // Tracks if connection is in use by pool
 
   constructor(
     private sprite: Sprite
   ) {
     super();
+  }
+
+  /**
+   * Check if this connection is marked as active (in use) by the pool
+   */
+  isActive(): boolean {
+    return this.poolActive;
+  }
+
+  /**
+   * Set the pool active state
+   */
+  setActive(active: boolean): void {
+    this.poolActive = active;
+  }
+
+  /**
+   * Clear the operation connection (called by pool on release)
+   */
+  clearOpConn(): void {
+    this.opConn = null;
   }
 
   /**
@@ -408,32 +431,139 @@ export class ControlConnection extends EventEmitter {
   }
 }
 
+// Default pool size
+const DEFAULT_POOL_SIZE = 5;
+
 /**
- * Get or create a control connection for a sprite.
- * Caches the connection on the sprite instance.
+ * ControlPool manages a pool of control connections for concurrent operations.
  */
-const controlConnections = new WeakMap<Sprite, ControlConnection>();
+export class ControlPool {
+  private conns: ControlConnection[] = [];
+  private waiters: Array<{
+    resolve: (cc: ControlConnection) => void;
+    reject: (err: Error) => void;
+  }> = [];
+  private closed: boolean = false;
 
-export async function getControlConnection(sprite: Sprite): Promise<ControlConnection> {
-  let cc = controlConnections.get(sprite);
+  constructor(
+    private sprite: Sprite,
+    private maxSize: number = DEFAULT_POOL_SIZE
+  ) {}
 
-  // Return existing connection if valid
-  if (cc && !cc.isClosed()) {
-    return cc;
+  /**
+   * Acquire a connection from the pool.
+   * Creates a new connection if the pool isn't full, otherwise waits.
+   */
+  async acquire(): Promise<ControlConnection> {
+    if (this.closed) {
+      throw new Error('Pool is closed');
+    }
+
+    // Try to find an available connection
+    for (const cc of this.conns) {
+      if (!cc.isClosed() && !cc.isActive()) {
+        cc.setActive(true);
+        return cc;
+      }
+    }
+
+    // If pool isn't full, create a new connection
+    if (this.conns.length < this.maxSize) {
+      const cc = new ControlConnection(this.sprite);
+      await cc.connect();
+      this.conns.push(cc);
+      cc.setActive(true);
+      return cc;
+    }
+
+    // Pool is full, wait for a connection
+    return new Promise((resolve, reject) => {
+      this.waiters.push({ resolve, reject });
+    });
   }
 
-  // Create new connection
-  cc = new ControlConnection(sprite);
-  await cc.connect();
-  controlConnections.set(sprite, cc);
+  /**
+   * Release a connection back to the pool.
+   */
+  release(cc: ControlConnection): void {
+    cc.setActive(false);
+    cc.clearOpConn();
 
-  return cc;
+    // If there are waiters, give them this connection
+    if (this.waiters.length > 0) {
+      const waiter = this.waiters.shift()!;
+      cc.setActive(true);
+      waiter.resolve(cc);
+    }
+  }
+
+  /**
+   * Close all connections in the pool.
+   */
+  close(): void {
+    this.closed = true;
+
+    // Cancel all waiters
+    for (const waiter of this.waiters) {
+      waiter.reject(new Error('Pool is closed'));
+    }
+    this.waiters = [];
+
+    // Close all connections
+    for (const cc of this.conns) {
+      cc.close();
+    }
+    this.conns = [];
+  }
+
+  /**
+   * Get the current number of connections in the pool.
+   */
+  size(): number {
+    return this.conns.length;
+  }
+
+  /**
+   * Check if the pool has any active connections.
+   */
+  hasConnections(): boolean {
+    return this.conns.length > 0;
+  }
+}
+
+/**
+ * Get or create a control pool for a sprite.
+ */
+const controlPools = new WeakMap<Sprite, ControlPool>();
+
+export async function getControlConnection(sprite: Sprite): Promise<ControlConnection> {
+  let pool = controlPools.get(sprite);
+
+  // Get or create pool
+  if (!pool) {
+    pool = new ControlPool(sprite);
+    controlPools.set(sprite, pool);
+  }
+
+  return pool.acquire();
+}
+
+export function releaseControlConnection(sprite: Sprite, cc: ControlConnection): void {
+  const pool = controlPools.get(sprite);
+  if (pool) {
+    pool.release(cc);
+  }
 }
 
 export function closeControlConnection(sprite: Sprite): void {
-  const cc = controlConnections.get(sprite);
-  if (cc) {
-    cc.close();
-    controlConnections.delete(sprite);
+  const pool = controlPools.get(sprite);
+  if (pool) {
+    pool.close();
+    controlPools.delete(sprite);
   }
+}
+
+export function hasControlConnection(sprite: Sprite): boolean {
+  const pool = controlPools.get(sprite);
+  return pool !== undefined && pool.hasConnections();
 }

@@ -27,7 +27,8 @@ export class SpritesClient {
     this.token = token;
     this.baseURL = (options.baseURL || 'https://api.sprites.dev').replace(/\/+$/, '');
     this.timeout = options.timeout || 30000;
-    this.controlMode = options.controlMode || false;
+    // Control mode enabled by default for efficient connection reuse
+    this.controlMode = options.controlMode !== false;
   }
 
   /**
