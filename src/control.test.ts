@@ -7,12 +7,12 @@ import assert from 'node:assert';
 import { SpritesClient } from './client.js';
 
 describe('Control Mode Client Options', () => {
-  it('should have controlMode false by default', () => {
+  it('should have controlMode true by default for efficient connection reuse', () => {
     const client = new SpritesClient('test-token');
-    assert.strictEqual(client.controlMode, false);
+    assert.strictEqual(client.controlMode, true);
   });
 
-  it('should enable controlMode when specified', () => {
+  it('should enable controlMode when explicitly specified', () => {
     const client = new SpritesClient('test-token', { controlMode: true });
     assert.strictEqual(client.controlMode, true);
   });
@@ -24,22 +24,22 @@ describe('Control Mode Client Options', () => {
 });
 
 describe('Sprite Control Mode', () => {
-  it('should reflect client controlMode setting', () => {
+  it('should reflect client controlMode setting when enabled', () => {
     const client = new SpritesClient('test-token', { controlMode: true });
     const sprite = client.sprite('test-sprite');
     assert.strictEqual(sprite.useControlMode(), true);
   });
 
-  it('should return false when client controlMode is disabled', () => {
+  it('should reflect client controlMode setting when disabled', () => {
     const client = new SpritesClient('test-token', { controlMode: false });
     const sprite = client.sprite('test-sprite');
     assert.strictEqual(sprite.useControlMode(), false);
   });
 
-  it('should return false when controlMode is not specified', () => {
+  it('should return true when controlMode is not specified (enabled by default)', () => {
     const client = new SpritesClient('test-token');
     const sprite = client.sprite('test-sprite');
-    assert.strictEqual(sprite.useControlMode(), false);
+    assert.strictEqual(sprite.useControlMode(), true);
   });
 });
 
