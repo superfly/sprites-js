@@ -18,6 +18,7 @@ import {
 } from './services.js';
 import { getNetworkPolicy, updateNetworkPolicy } from './policy.js';
 import { SpriteFilesystem } from './filesystem.js';
+import { ControlConnection, getControlConnection, closeControlConnection, hasControlConnection } from './control.js';
 import type {
   SpawnOptions,
   ExecOptions,
@@ -405,6 +406,39 @@ export class Sprite {
    */
   filesystem(workingDir: string = '/'): SpriteFilesystem {
     return new SpriteFilesystem(this.client, this.name, workingDir);
+  }
+
+  // ========== Control Connection API ==========
+
+  /**
+   * Check if control mode is enabled for this sprite
+   */
+  useControlMode(): boolean {
+    return this.client.controlMode;
+  }
+
+  /**
+   * Get or create a control connection for multiplexed operations
+   */
+  async getControlConnection(): Promise<ControlConnection> {
+    return getControlConnection(this);
+  }
+
+  /**
+   * Close the control connection if open
+   */
+  closeControlConnection(): void {
+    closeControlConnection(this);
+  }
+
+  /**
+   * Check if this sprite has an active control connection.
+   * This can be used to verify that control mode is being used.
+   */
+  hasControlConnection(): boolean {
+    // Import the WeakMap from control module to check
+    // We need to expose a check function
+    return hasControlConnection(this);
   }
 }
 
