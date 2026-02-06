@@ -273,11 +273,6 @@ export async function execFile(
   args: string[] = [],
   options: ExecOptions = {}
 ): Promise<ExecResult> {
-  // Use control mode if enabled and not attaching to a session
-  if (!options.sessionId && sprite.useControlMode()) {
-    return execFileViaControl(sprite, file, args, options);
-  }
-
   const encoding = options.encoding || 'utf8';
   const maxBuffer = options.maxBuffer || 10 * 1024 * 1024; // 10MB default
 
@@ -331,92 +326,5 @@ export async function execFile(
 
     cmd.start().catch(reject);
   });
-}
-
-/**
- * Execute a file via control connection for multiplexed operations
- */
-async function execFileViaControl(
-  sprite: Sprite,
-  file: string,
-  args: string[] = [],
-  options: ExecOptions = {}
-): Promise<ExecResult> {
-  const { releaseControlConnection } = await import('./control.js');
-  const encoding = options.encoding || 'utf8';
-  const maxBuffer = options.maxBuffer || 10 * 1024 * 1024; // 10MB default
-
-  // Get a control connection from the pool
-  const cc = await sprite.getControlConnection();
-
-  // Build operation options
-  const opOptions = {
-    cmd: [file, ...args],
-    env: options.env ? Object.entries(options.env).map(([k, v]) => `${k}=${v}`) : undefined,
-    dir: options.cwd,
-    tty: options.tty,
-    rows: options.rows,
-    cols: options.cols,
-    stdin: true, // Enable stdin by default
-  };
-
-  try {
-    // Start the operation
-    const op = await cc.startOp('exec', opOptions);
-
-    return await new Promise((resolve, reject) => {
-      const stdoutChunks: Buffer[] = [];
-      const stderrChunks: Buffer[] = [];
-      let stdoutLength = 0;
-      let stderrLength = 0;
-
-      op.on('stdout', (data: Buffer) => {
-        stdoutChunks.push(data);
-        stdoutLength += data.length;
-        if (stdoutLength > maxBuffer) {
-          op.signal('KILL');
-          reject(new Error(`stdout maxBuffer exceeded`));
-        }
-      });
-
-      op.on('stderr', (data: Buffer) => {
-        stderrChunks.push(data);
-        stderrLength += data.length;
-        if (stderrLength > maxBuffer) {
-          op.signal('KILL');
-          reject(new Error(`stderr maxBuffer exceeded`));
-        }
-      });
-
-      op.on('error', (error: Error) => {
-        reject(error);
-      });
-
-      // Send stdin EOF since we're not providing input
-      op.sendEOF();
-
-      // Wait for completion
-      op.wait().then((code) => {
-        const stdoutBuffer = Buffer.concat(stdoutChunks);
-        const stderrBuffer = Buffer.concat(stderrChunks);
-
-        const result: ExecResult = {
-          stdout: encoding === ('buffer' as any) ? stdoutBuffer : stdoutBuffer.toString(encoding),
-          stderr: encoding === ('buffer' as any) ? stderrBuffer : stderrBuffer.toString(encoding),
-          exitCode: code,
-        };
-
-        if (code !== 0) {
-          const error = new ExecError(`Command failed with exit code ${code}`, result);
-          reject(error);
-        } else {
-          resolve(result);
-        }
-      }).catch(reject);
-    });
-  } finally {
-    // Always release the connection back to the pool
-    releaseControlConnection(sprite, cc);
-  }
 }
 
