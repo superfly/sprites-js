@@ -11,8 +11,6 @@ export { CheckpointStream, RestoreStream } from './checkpoint.js';
 export { ProxySession, ProxyManager, proxyPort, proxyPorts } from './proxy.js';
 export { ServiceLogStream } from './services.js';
 export { SpriteFilesystem } from './filesystem.js';
-export { ControlConnection, OpConn } from './control.js';
-export type { StartOpOptions } from './control.js';
 
 export type {
   ClientOptions,
