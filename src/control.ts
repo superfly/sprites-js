@@ -259,15 +259,21 @@ export class ControlConnection extends EventEmitter {
 
         this.ws.binaryType = 'arraybuffer';
 
+        let connected = false;
+
         this.ws.addEventListener('open', () => {
+          connected = true;
           resolve();
         });
 
         this.ws.addEventListener('error', () => {
           const error = new Error('WebSocket error');
           this.closeError = error;
-          this.emit('error', error);
-          if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+          if (connected) {
+            // Post-connection error: emit on EventEmitter for listeners
+            this.emit('error', error);
+          } else {
+            // Pre-connection error: reject the connect() promise
             reject(error);
           }
         });
