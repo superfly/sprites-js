@@ -100,10 +100,6 @@ export interface SpriteInfo {
   createdAt: Date;
   /** Last update timestamp */
   updatedAt: Date;
-  /** Bucket name */
-  bucketName?: string;
-  /** Primary region */
-  primaryRegion?: string;
   /** Public URL for the sprite */
   url?: string;
   /** URL authentication settings */
@@ -429,14 +425,6 @@ export interface CreateSpriteRequest {
   config?: SpriteConfig;
   /** Optional environment variables */
   environment?: Record<string, string>;
-}
-
-/**
- * Response from sprite creation
- */
-export interface CreateSpriteResponse {
-  /** Created sprite name */
-  name: string;
 }
 
 /**

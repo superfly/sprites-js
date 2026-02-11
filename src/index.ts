@@ -28,7 +28,6 @@ export type {
   OrganizationInfo,
   ControlMessage,
   CreateSpriteRequest,
-  CreateSpriteResponse,
   Checkpoint,
   URLSettings,
   StreamMessage,

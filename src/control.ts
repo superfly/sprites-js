@@ -266,8 +266,9 @@ export class ControlConnection extends EventEmitter {
           resolve();
         });
 
-        this.ws.addEventListener('error', () => {
-          const error = new Error('WebSocket error');
+        this.ws.addEventListener('error', (event: any) => {
+          const msg = event?.message || event?.error?.message || event?.error || 'unknown';
+          const error = new Error(`WebSocket error: ${msg} (url: ${url})`);
           this.closeError = error;
           if (connected) {
             // Post-connection error: emit on EventEmitter for listeners

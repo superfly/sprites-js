@@ -49,8 +49,6 @@ export class Sprite {
   environment?: Record<string, string>;
   createdAt?: Date;
   updatedAt?: Date;
-  bucketName?: string;
-  primaryRegion?: string;
   url?: string;
   urlSettings?: URLSettings;
 
