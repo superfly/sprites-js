@@ -85,8 +85,9 @@ export class WSCommand extends EventEmitter {
           resolve();
         });
 
-        this.ws.addEventListener('error', () => {
-          const error = new Error('WebSocket error');
+        this.ws.addEventListener('error', (event: any) => {
+          const msg = event?.message || event?.error?.message || event?.error || 'unknown';
+          const error = new Error(`WebSocket error: ${msg} (url: ${this.url})`);
           this.emit('error', error);
           if (!resolved) {
             reject(error);
@@ -98,6 +99,12 @@ export class WSCommand extends EventEmitter {
         });
 
         this.ws.addEventListener('close', (event) => {
+          if (!resolved) {
+            const error = new Error(`WebSocket closed before open: code=${event.code} reason=${event.reason || 'none'} (url: ${this.url})`);
+            this.emit('error', error);
+            reject(error);
+            return;
+          }
           this.handleClose(event);
         });
       } catch (error) {
