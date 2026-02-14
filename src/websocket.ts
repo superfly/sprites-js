@@ -23,6 +23,7 @@ export class WSCommand extends EventEmitter {
   private tty: boolean;
   private started: boolean = false;
   private done: boolean = false;
+  private closeError: Error | null = null;
   private pingInterval: ReturnType<typeof setInterval> | null = null;
   private pongTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastPongTime: number = 0;
@@ -86,10 +87,16 @@ export class WSCommand extends EventEmitter {
         });
 
         this.ws.addEventListener('error', () => {
+          if (this.done) return; // Ignore errors after exit (close race)
           const error = new Error('WebSocket error');
-          this.emit('error', error);
           if (!resolved) {
+            this.emit('error', error);
             reject(error);
+          } else {
+            // Post-connection error: store it for handleClose to use.
+            // Don't emit here - handleClose always fires after error
+            // and will determine the proper outcome.
+            this.closeError = error;
           }
         });
 
@@ -203,6 +210,14 @@ export class WSCommand extends EventEmitter {
         // Text message - control or notification
         try {
           const msg = JSON.parse(event.data);
+          // Handle exit message from server
+          if (msg.type === 'exit' && typeof msg.exit_code === 'number') {
+            this.exitCode = msg.exit_code;
+            if (!this.done) {
+              this.done = true;
+              this.emit('exit', this.exitCode);
+            }
+          }
           this.emit('message', msg);
         } catch {
           // Not JSON, treat as raw text
@@ -230,6 +245,10 @@ export class WSCommand extends EventEmitter {
           break;
         case StreamID.Exit:
           this.exitCode = payload.length > 0 ? payload[0] : 0;
+          if (!this.done) {
+            this.done = true;
+            this.emit('exit', this.exitCode);
+          }
           this.close();
           break;
       }
@@ -245,7 +264,15 @@ export class WSCommand extends EventEmitter {
     if (!this.done) {
       this.done = true;
 
-      // If we're in TTY mode and haven't received an exit code, determine it from close event
+      // In non-TTY mode, we always expect an exit frame before close.
+      // If we never got one, emit an error regardless of close code.
+      if (!this.tty && this.exitCode === -1) {
+        const error = this.closeError || new Error(`WebSocket closed without exit frame (code ${event.code})`);
+        this.emit('error', error);
+        return;
+      }
+
+      // In TTY mode, determine exit code from the close event if no exit message was received.
       if (this.tty && this.exitCode === -1) {
         this.exitCode = event.code === 1000 ? 0 : 1;
       }
