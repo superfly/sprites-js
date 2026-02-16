@@ -2,25 +2,29 @@
   "name": "@fly/sprites",
   "version": "0.0.1-dev",
   "description": "JavaScript/TypeScript SDK for Sprites - remote command execution",
-  "main": "dist/index.js",
+  "main": "dist/index.cjs",
   "types": "dist/index.d.ts",
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
     }
   },
   "engines": {
     "node": ">=24.0.0"
   },
   "scripts": {
-    "build": "tsc",
+    "build:esm": "tsc",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build": "npm run clean && npm run build:esm && npm run build:cjs && cp dist-cjs/index.js dist/index.cjs",
     "watch": "tsc --watch",
     "test": "npm run build && node --test dist/**/*.test.js",
     "test:unit": "npm run build && node --test dist/exec.test.js",
     "test:integration": "npm run build && node --test dist/integration.test.js",
-    "clean": "rm -rf dist",
+    "clean": "rm -rf dist dist-cjs",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "keywords": [
@@ -43,6 +47,7 @@
   },
   "files": [
     "dist/**/*.js",
+    "dist/**/*.cjs",
     "dist/**/*.d.ts",
     "dist/**/*.d.ts.map",
     "!dist/**/*.test.*",
@@ -54,4 +59,3 @@
     "typescript": "^5.6.0"
   }
 }
-
