@@ -11,9 +11,26 @@ import type {
   SpriteList,
   ListOptions,
   CreateSpriteRequest,
-  CreateSpriteResponse,
   URLSettings,
 } from './types.js';
+
+/**
+ * Map API snake_case response to camelCase SpriteInfo fields
+ */
+function spriteFromAPI(data: any): SpriteInfo {
+  return {
+    id: data.id,
+    name: data.name,
+    organization: data.organization,
+    status: data.status,
+    config: data.config,
+    environment: data.environment,
+    createdAt: data.created_at ? new Date(data.created_at) : undefined,
+    updatedAt: data.updated_at ? new Date(data.updated_at) : undefined,
+    url: data.url,
+    urlSettings: data.url_settings,
+  } as SpriteInfo;
+}
 
 /**
  * Main client for interacting with the Sprites API
@@ -62,8 +79,10 @@ export class SpritesClient {
       throw new Error(`Failed to create sprite (status ${response.status}): ${body}`);
     }
 
-    const result = await response.json() as CreateSpriteResponse;
-    return new Sprite(result.name, this);
+    const info = spriteFromAPI(await response.json());
+    const sprite = new Sprite(info.name, this);
+    Object.assign(sprite, info);
+    return sprite;
   }
 
   /**
@@ -86,7 +105,7 @@ export class SpritesClient {
       throw new Error(`Failed to get sprite (status ${response.status}): ${body}`);
     }
 
-    const info = await response.json() as SpriteInfo;
+    const info = spriteFromAPI(await response.json());
     const sprite = new Sprite(info.name, this);
     Object.assign(sprite, info);
     return sprite;
@@ -118,7 +137,12 @@ export class SpritesClient {
       throw new Error(`Failed to list sprites (status ${response.status}): ${body}`);
     }
 
-    return await response.json() as SpriteList;
+    const data = await response.json() as any;
+    return {
+      sprites: (data.sprites || []).map(spriteFromAPI),
+      hasMore: data.has_more || false,
+      nextContinuationToken: data.next_continuation_token,
+    } as SpriteList;
   }
 
   /**
