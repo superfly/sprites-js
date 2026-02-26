@@ -281,7 +281,7 @@ describe('parseAPIError', () => {
     assert.ok(err);
     assert.strictEqual(err.statusCode, 429);
     assert.strictEqual(err.errorCode, 'sprite_creation_rate_limited');
-    assert.strictEqual(err.message, 'Rate limit exceeded');
+    assert.strictEqual(err.message, 'Rate limit exceeded (limit: 10 per 60s, retry after: 30s, upgrade: https://fly.io/upgrade)');
     assert.strictEqual(err.limit, 10);
     assert.strictEqual(err.windowSeconds, 60);
     assert.strictEqual(err.retryAfterSeconds, 30);
