@@ -374,6 +374,27 @@ export function parseAPIError(
     message = `API error (status ${statusCode})`;
   }
 
+  // Enrich rate limit messages with actionable details
+  if (statusCode === 429 && message) {
+    const details: string[] = [];
+    if (limit !== undefined && windowSeconds !== undefined) {
+      details.push(`limit: ${limit} per ${windowSeconds}s`);
+    }
+    if (currentCount !== undefined) {
+      details.push(`current: ${currentCount}`);
+    }
+    const retrySeconds = retryAfterSeconds ?? retryAfterHeader;
+    if (retrySeconds !== undefined) {
+      details.push(`retry after: ${retrySeconds}s`);
+    }
+    if (upgradeUrl) {
+      details.push(`upgrade: ${upgradeUrl}`);
+    }
+    if (details.length > 0) {
+      message = `${message} (${details.join(', ')})`;
+    }
+  }
+
   return new APIError(message || errorCode || `API error (status ${statusCode})`, {
     errorCode,
     statusCode,
