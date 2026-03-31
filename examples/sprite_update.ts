@@ -8,6 +8,6 @@ const spriteName = process.env.SPRITE_NAME!;
 
 const client = new SpritesClient(token);
 
-await client.updateURLSettings(spriteName, { auth: 'public' });
+await client.updateSprite(spriteName, { urlSettings: { auth: 'public' }, labels: ['prod'] });
 
-console.log('URL settings updated');
+console.log('Sprite updated');

@@ -53,6 +53,7 @@ export class Sprite {
   primaryRegion?: string;
   url?: string;
   urlSettings?: URLSettings;
+  labels?: string[];
 
   constructor(name: string, client: SpritesClient) {
     this.name = name;

@@ -13,6 +13,7 @@ import type {
   CreateSpriteRequest,
   CreateSpriteResponse,
   URLSettings,
+  UpdateSpriteRequest,
 } from './types.js';
 
 /**
@@ -41,8 +42,8 @@ export class SpritesClient {
   /**
    * Create a new sprite
    */
-  async createSprite(name: string, config?: SpriteConfig): Promise<Sprite> {
-    const request: CreateSpriteRequest = { name, config };
+  async createSprite(name: string, config?: SpriteConfig, labels?: string[]): Promise<Sprite> {
+    const request: CreateSpriteRequest = { name, config, labels };
 
     const response = await this.fetch(`${this.baseURL}/v1/sprites`, {
       method: 'POST',
@@ -211,6 +212,34 @@ export class SpritesClient {
       const apiErr = parseAPIError(response.status, body, headers);
       if (apiErr) throw apiErr;
       throw new Error(`Failed to update URL settings (status ${response.status}): ${body}`);
+    }
+  }
+
+  /**
+   * Update sprite settings (URL auth, labels, etc.)
+   */
+  async updateSprite(name: string, req: UpdateSpriteRequest): Promise<void> {
+    const body: Record<string, unknown> = {};
+    if (req.urlSettings !== undefined) body['url_settings'] = req.urlSettings;
+    if (req.labels !== undefined) body['labels'] = req.labels;
+    if (req.clearLabels) body['clear_labels'] = true;
+
+    const response = await this.fetch(`${this.baseURL}/v1/sprites/${name}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      const headers = Object.fromEntries(response.headers.entries());
+      const apiErr = parseAPIError(response.status, text, headers);
+      if (apiErr) throw apiErr;
+      throw new Error(`Failed to update sprite (status ${response.status}): ${text}`);
     }
   }
 

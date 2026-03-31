@@ -108,6 +108,8 @@ export interface SpriteInfo {
   url?: string;
   /** URL authentication settings */
   urlSettings?: URLSettings;
+  /** Labels applied to the sprite */
+  labels?: string[];
 }
 
 /**
@@ -429,6 +431,20 @@ export interface CreateSpriteRequest {
   config?: SpriteConfig;
   /** Optional environment variables */
   environment?: Record<string, string>;
+  /** Optional labels */
+  labels?: string[];
+}
+
+/**
+ * Request body for updating a sprite
+ */
+export interface UpdateSpriteRequest {
+  /** URL authentication settings */
+  urlSettings?: URLSettings;
+  /** Labels to apply */
+  labels?: string[];
+  /** Clear all existing labels before applying new ones */
+  clearLabels?: boolean;
 }
 
 /**

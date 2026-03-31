@@ -29,6 +29,7 @@ export type {
   ControlMessage,
   CreateSpriteRequest,
   CreateSpriteResponse,
+  UpdateSpriteRequest,
   Checkpoint,
   URLSettings,
   StreamMessage,

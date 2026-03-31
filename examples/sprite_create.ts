@@ -8,6 +8,6 @@ const spriteName = process.env.SPRITE_NAME!;
 
 const client = new SpritesClient(token);
 
-await client.createSprite(spriteName);
+await client.createSprite(spriteName, undefined, ['prod']);
 
 console.log(`Sprite '${spriteName}' created`);
