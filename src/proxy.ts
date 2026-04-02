@@ -87,7 +87,7 @@ export class ProxySession extends EventEmitter {
       const response = await new Promise<ProxyResponseMessage>((resolve, reject) => {
         const timeout = setTimeout(() => {
           reject(new Error('Timeout waiting for proxy response'));
-        }, 10_000);
+        }, 30_000);
 
         const messageHandler = (event: MessageEvent) => {
           if (typeof event.data === 'string') {

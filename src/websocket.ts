@@ -121,7 +121,7 @@ export class WSCommand extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('Timeout waiting for session_info'));
-      }, 10_000);
+      }, 30_000);
 
       const messageHandler = (event: MessageEvent) => {
         if (typeof event.data === 'string') {
