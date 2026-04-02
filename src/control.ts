@@ -259,20 +259,30 @@ export class ControlConnection extends EventEmitter {
 
         this.ws.binaryType = 'arraybuffer';
 
-        let connected = false;
+        let settled = false;
+
+        const openTimeout = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            reject(new Error('WebSocket opening handshake timed out'));
+          }
+        }, 30000); // 30s opening handshake timeout
 
         this.ws.addEventListener('open', () => {
-          connected = true;
+          clearTimeout(openTimeout);
+          settled = true;
           resolve();
         });
 
         this.ws.addEventListener('error', () => {
+          clearTimeout(openTimeout);
           const error = new Error('WebSocket error');
           this.closeError = error;
-          if (connected) {
+          if (settled) {
             // Post-connection error: emit on EventEmitter for listeners
             this.emit('error', error);
           } else {
+            settled = true;
             // Pre-connection error: reject the connect() promise
             reject(error);
           }
