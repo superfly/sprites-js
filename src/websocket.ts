@@ -237,6 +237,14 @@ export class WSCommand extends EventEmitter {
           break;
         case StreamID.Exit:
           this.exitCode = payload.length > 0 ? payload[0] : 0;
+          // Emit 'exit' immediately. The server holds the WS open ~5s after
+          // sending EXIT before initiating its own close handshake, so
+          // waiting for handleClose to fire 'exit' adds a fixed ~5s tax to
+          // every exec. Fire-and-forget close — matches the Elixir SDK.
+          if (!this.done) {
+            this.done = true;
+            this.emit('exit', this.exitCode);
+          }
           this.close();
           break;
       }
