@@ -2,7 +2,7 @@
  * Network policy API handlers
  */
 
-import type { NetworkPolicy } from './types.js';
+import type { NetworkPolicy, PrivilegesPolicy, ResourcesPolicy } from './types.js';
 
 interface ClientInfo {
   baseURL: string;
@@ -17,7 +17,7 @@ export async function getNetworkPolicy(
   spriteName: string
 ): Promise<NetworkPolicy> {
   const response = await fetch(
-    `${client.baseURL}/v1/sprites/${spriteName}/policy/network`,
+    `${client.baseURL}/v1/sprites/${encodeURIComponent(spriteName)}/policy/network`,
     {
       method: 'GET',
       headers: {
@@ -46,7 +46,7 @@ export async function updateNetworkPolicy(
   policy: NetworkPolicy
 ): Promise<void> {
   const response = await fetch(
-    `${client.baseURL}/v1/sprites/${spriteName}/policy/network`,
+    `${client.baseURL}/v1/sprites/${encodeURIComponent(spriteName)}/policy/network`,
     {
       method: 'POST',
       headers: {
@@ -69,4 +69,58 @@ export async function updateNetworkPolicy(
       `Failed to update network policy (status ${response.status}): ${body}`
     );
   }
+}
+
+async function policyRequest<T>(
+  client: ClientInfo,
+  spriteName: string,
+  kind: 'privileges' | 'resources',
+  method: 'GET' | 'POST' | 'DELETE',
+  body?: unknown
+): Promise<T> {
+  const response = await fetch(
+    `${client.baseURL}/v1/sprites/${encodeURIComponent(spriteName)}/policy/${kind}`,
+    {
+      method,
+      headers: {
+        Authorization: `Bearer ${client.token}`,
+        ...(body !== undefined && { 'Content-Type': 'application/json' }),
+      },
+      ...(body !== undefined && { body: JSON.stringify(body) }),
+      signal: AbortSignal.timeout(30000),
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Failed to ${method.toLowerCase()} ${kind} policy (status ${response.status}): ${text}`);
+  }
+  if (method === 'GET') return response.json() as Promise<T>;
+  return undefined as T;
+}
+
+export function getPrivilegesPolicy(client: ClientInfo, spriteName: string): Promise<PrivilegesPolicy> {
+  return policyRequest(client, spriteName, 'privileges', 'GET');
+}
+
+export function updatePrivilegesPolicy(client: ClientInfo, spriteName: string, policy: PrivilegesPolicy): Promise<void> {
+  return policyRequest(client, spriteName, 'privileges', 'POST', policy);
+}
+
+export function deletePrivilegesPolicy(client: ClientInfo, spriteName: string): Promise<void> {
+  return policyRequest(client, spriteName, 'privileges', 'DELETE');
+}
+
+export async function getResourcesPolicy(client: ClientInfo, spriteName: string): Promise<ResourcesPolicy> {
+  const data = await policyRequest<any>(client, spriteName, 'resources', 'GET');
+  return { memory: data.memory ? { limitMB: data.memory.limit_mb, autoscale: data.memory.autoscale } : undefined };
+}
+
+export function updateResourcesPolicy(client: ClientInfo, spriteName: string, policy: ResourcesPolicy): Promise<void> {
+  return policyRequest(client, spriteName, 'resources', 'POST', {
+    ...(policy.memory && { memory: { limit_mb: policy.memory.limitMB, autoscale: policy.memory.autoscale } }),
+  });
+}
+
+export function deleteResourcesPolicy(client: ClientInfo, spriteName: string): Promise<void> {
+  return policyRequest(client, spriteName, 'resources', 'DELETE');
 }

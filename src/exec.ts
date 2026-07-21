@@ -7,7 +7,22 @@ import { Readable, Writable, PassThrough } from 'node:stream';
 import { WSCommand } from './websocket.js';
 import type { Sprite } from './sprite.js';
 import type { SpawnOptions, ExecOptions, ExecResult } from './types.js';
+import type { HTTPExecOptions, SessionKillEvent } from './types.js';
 import { ExecError } from './types.js';
+import { parseAPIError } from './types.js';
+import { NDJSONStream } from './ndjson.js';
+
+export class SessionKillStream extends NDJSONStream<SessionKillEvent> {
+  constructor(response: Response) {
+    super(response, data => ({
+      type: data.type,
+      message: data.message,
+      signal: data.signal,
+      pid: data.pid,
+      exitCode: data.exit_code,
+    }));
+  }
+}
 
 /**
  * Represents a command running on a sprite
@@ -138,9 +153,9 @@ export class SpriteCommand extends EventEmitter {
     // Use /exec/{id} for attach, /exec for new commands
     let path: string;
     if (options.sessionId) {
-      path = `/v1/sprites/${this.sprite.name}/exec/${options.sessionId}`;
+      path = `/v1/sprites/${encodeURIComponent(this.sprite.name)}/exec/${encodeURIComponent(options.sessionId)}`;
     } else {
-      path = `/v1/sprites/${this.sprite.name}/exec`;
+      path = `/v1/sprites/${encodeURIComponent(this.sprite.name)}/exec`;
     }
 
     const url = new URL(`${baseURL}${path}`);
@@ -188,6 +203,10 @@ export class SpriteCommand extends EventEmitter {
     // Add control mode flag
     if (options.controlMode) {
       url.searchParams.set('cc', 'true');
+    }
+
+    if (options.maxRunAfterDisconnect) {
+      url.searchParams.set('max_run_after_disconnect', options.maxRunAfterDisconnect);
     }
 
     return url.toString();
@@ -338,6 +357,134 @@ export async function execFile(
 }
 
 /**
+ * Execute a non-TTY command over HTTP for environments without WebSockets.
+ *
+ * The current server protocol uses type-prefixed frames without lengths and
+ * therefore relies on HTTP transport chunk boundaries being preserved. This
+ * method rejects frame types that reveal re-chunking, but cannot detect every
+ * coalesced frame. Prefer the WebSocket exec methods for large output.
+ */
+export async function execFileHTTP(
+  sprite: Sprite,
+  file: string,
+  args: string[] = [],
+  options: HTTPExecOptions = {}
+): Promise<ExecResult> {
+  const url = new URL(`${sprite.client.baseURL}/v1/sprites/${encodeURIComponent(sprite.name)}/exec`);
+  for (const value of [file, ...args]) url.searchParams.append('cmd', value);
+  url.searchParams.set('path', file);
+  if (options.cwd) url.searchParams.set('dir', options.cwd);
+  for (const [key, value] of Object.entries(options.env ?? {})) {
+    url.searchParams.append('env', `${key}=${value}`);
+  }
+  if (options.input !== undefined) url.searchParams.set('stdin', 'true');
+
+  if (options.timeout !== undefined &&
+      (!Number.isFinite(options.timeout) || options.timeout < 0)) {
+    throw new TypeError('timeout must be a non-negative finite number');
+  }
+  const signals = [
+    options.signal,
+    options.timeout === undefined ? undefined : AbortSignal.timeout(options.timeout),
+  ].filter((signal): signal is AbortSignal => signal !== undefined);
+  const requestSignal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${sprite.client.token}`,
+      'Content-Type': 'application/octet-stream',
+    },
+    body: options.input === undefined ? undefined :
+      typeof options.input === 'string' ? Buffer.from(options.input) : options.input,
+    signal: requestSignal,
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    const error = parseAPIError(response.status, body, Object.fromEntries(response.headers.entries()));
+    if (error) throw error;
+    throw new Error(`Failed to execute command over HTTP (status ${response.status}): ${body}`);
+  }
+  if (!response.body) throw new Error('HTTP exec response has no body');
+
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  let stdoutLength = 0;
+  let stderrLength = 0;
+  let exitCode = -1;
+  const maxBuffer = options.maxBuffer || 10 * 1024 * 1024;
+  const reader = response.body.getReader();
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!value?.length) continue;
+      const frameType = value[0];
+      const payload = Buffer.from(value.subarray(1));
+      if (frameType === 1) {
+        stdoutLength += payload.length;
+        if (stdoutLength > maxBuffer) throw new Error('stdout maxBuffer exceeded');
+        stdout.push(payload);
+      } else if (frameType === 2) {
+        stderrLength += payload.length;
+        if (stderrLength > maxBuffer) throw new Error('stderr maxBuffer exceeded');
+        stderr.push(payload);
+      } else if (frameType === 3) {
+        if (payload.length !== 1) {
+          throw new Error(
+            `Invalid HTTP exec exit frame length ${payload.length}; ` +
+            'the server protocol requires preserved HTTP chunk boundaries'
+          );
+        }
+        exitCode = payload[0] ?? 255;
+      } else {
+        throw new Error(
+          `Unsupported HTTP exec frame type 0x${frameType.toString(16).padStart(2, '0')}; ` +
+          'the server protocol requires preserved HTTP chunk boundaries'
+        );
+      }
+    }
+    if (exitCode < 0) throw new Error('HTTP exec response did not include an exit frame');
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+
+  const stdoutBuffer = Buffer.concat(stdout);
+  const stderrBuffer = Buffer.concat(stderr);
+  const encoding = options.encoding || 'utf8';
+  const result: ExecResult = {
+    stdout: encoding === ('buffer' as any) ? stdoutBuffer : stdoutBuffer.toString(encoding),
+    stderr: encoding === ('buffer' as any) ? stderrBuffer : stderrBuffer.toString(encoding),
+    exitCode,
+  };
+  if (exitCode !== 0) throw new ExecError(`Command failed with exit code ${exitCode}`, result);
+  return result;
+}
+
+/** Kill an active exec session and stream progress events. */
+export async function killSession(
+  sprite: Sprite,
+  sessionId: string,
+  signal?: string,
+  timeout?: string
+): Promise<SessionKillStream> {
+  const url = new URL(`${sprite.client.baseURL}/v1/sprites/${encodeURIComponent(sprite.name)}/exec/${encodeURIComponent(sessionId)}/kill`);
+  if (signal) url.searchParams.set('signal', signal);
+  if (timeout) url.searchParams.set('timeout', timeout);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${sprite.client.token}` },
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    const error = parseAPIError(response.status, body, Object.fromEntries(response.headers.entries()));
+    if (error) throw error;
+    throw new Error(`Failed to kill session (status ${response.status}): ${body}`);
+  }
+  return new SessionKillStream(response);
+}
+
+/**
  * Execute a file via control connection for multiplexed operations
  */
 async function execFileViaControl(
@@ -423,4 +570,3 @@ async function execFileViaControl(
     releaseControlConnection(sprite, cc);
   }
 }
-

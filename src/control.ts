@@ -247,7 +247,7 @@ export class ControlConnection extends EventEmitter {
       baseURL = 'ws' + baseURL.substring(4);
     }
 
-    const url = `${baseURL}/v1/sprites/${this.sprite.name}/control`;
+    const url = `${baseURL}/v1/sprites/${encodeURIComponent(this.sprite.name)}/control`;
 
     return new Promise((resolve, reject) => {
       try {

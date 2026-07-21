@@ -48,16 +48,25 @@ const client = new SpritesClient(token, options);
 **Options:**
 - `baseURL`: API base URL (default: https://api.sprites.dev)
 - `timeout`: HTTP request timeout in ms (default: 30000)
+- `controlMode`: use multiplexed control connections for supported operations (default: false)
 
 **Methods:**
 - `sprite(name: string): Sprite` - Get a handle to a sprite
-- `createSprite(name: string, config?: SpriteConfig): Promise<Sprite>` - Create a new sprite
+- `createSprite(name: string, options?: CreateSpriteOptions): Promise<Sprite>` - Create a new sprite
+- `createSprite(name: string, config?: SpriteConfig, options?: Omit<CreateSpriteOptions, 'config'>): Promise<Sprite>` - Backward-compatible creation form
 - `getSprite(name: string): Promise<Sprite>` - Get sprite information
 - `listSprites(options?: ListOptions): Promise<SpriteList>` - List sprites
+- `watchSprites(options?): Promise<SpriteListStream>` - Stream live sprite state and organization counts
 - `listAllSprites(prefix?: string): Promise<Sprite[]>` - List all sprites (handles pagination)
 - `deleteSprite(name: string): Promise<void>` - Delete a sprite
 - `upgradeSprite(name: string): Promise<void>` - Upgrade a sprite
+- `restartSprite(name: string): Promise<RestartSpriteResult>` - Restart the backing machine
+- `checkSprite(name: string): Promise<SpriteCheck>` - Check sprite health
+- `updateSprite(name: string, options: UpdateSpriteOptions): Promise<Sprite>` - Update URL settings and/or labels
+- `updateURLSettings(name: string, settings: URLSettings): Promise<void>` - Update only URL access settings
 - `static createToken(flyMacaroon: string, orgSlug: string, inviteCode?: string): Promise<string>` - Create an access token
+
+Creation options include `config`, `environment`, `urlSettings`, `labels`, `waitForCapacity`, and the `default` or `dev` `runtime`. List options include `prefix`, `maxResults`, `continuationToken`, and `bulkLoad`.
 
 ### Sprite
 
@@ -87,7 +96,31 @@ execFile(file: string, args?: string[], options?: ExecOptions): Promise<ExecResu
 
 **Management Methods:**
 - `delete(): Promise<void>` - Delete the sprite
+- `destroy(): Promise<void>` - Alias for delete
 - `upgrade(): Promise<void>` - Upgrade the sprite
+- `restart(): Promise<RestartSpriteResult>` - Restart the backing machine
+- `check(): Promise<SpriteCheck>` - Check sprite health
+- `update(options: UpdateSpriteOptions): Promise<Sprite>` - Update URL settings and/or labels
+- `updateURLSettings(settings: URLSettings): Promise<void>` - Update URL access settings
+
+`Sprite` also exposes checkpoint, service, network-policy, filesystem, port-proxy, and control-connection methods. All resource names and IDs are safely path-encoded by the SDK.
+
+Current environment APIs include:
+
+- `execFileHTTP(...)` for non-TTY execution without WebSockets
+- `killSession(...)` with an async iterable progress stream
+- `watchPorts()` for snapshots and live port events
+- `restartService(...)` and `getServiceLogs(...)`
+- network, privileges, and resource policy get/update/delete operations
+- filesystem ownership changes and live filesystem watching
+
+> **HTTP exec protocol limitation:** The current `execFileHTTP` response format
+> prefixes each frame with a type byte but does not include a frame length. HTTP
+> intermediaries are allowed to split or combine transport chunks, so the SDK
+> cannot reliably reconstruct large or high-volume output. The method rejects
+> unrecognized frame types and supports `signal` and `timeout` cancellation, but
+> combined frames can remain ambiguous. Prefer the WebSocket-based `exec` or
+> `execFile` methods until the server protocol provides explicit frame lengths.
 
 ### SpriteCommand
 
@@ -211,13 +244,24 @@ try {
 ```typescript
 // Create a sprite
 const sprite = await client.createSprite('my-sprite', {
-  ramMB: 512,
-  cpus: 1,
-  region: 'ord',
+  config: {
+    ramMB: 512,
+    cpus: 1,
+    region: 'ord',
+  },
+  urlSettings: { auth: 'sprite', privateAccess: 'admins' },
+  labels: ['development'],
+  waitForCapacity: true,
+  runtime: 'dev',
 });
 
 // List sprites
 const sprites = await client.listAllSprites();
+
+// Update and inspect lifecycle state
+await sprite.update({ labels: ['development', 'typescript'] });
+const health = await sprite.check();
+await sprite.restart();
 
 // Delete a sprite
 await sprite.delete();
@@ -226,4 +270,3 @@ await sprite.delete();
 ## License
 
 MIT
-

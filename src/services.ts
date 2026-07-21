@@ -46,7 +46,7 @@ export class ServiceLogStream {
         }
 
         try {
-          return JSON.parse(line) as ServiceLogEvent;
+          return this.parseEvent(line);
         } catch {
           // Skip malformed JSON lines
           continue;
@@ -65,7 +65,7 @@ export class ServiceLogStream {
         // Process any remaining buffer content
         if (this.buffer.trim()) {
           try {
-            return JSON.parse(this.buffer.trim()) as ServiceLogEvent;
+            return this.parseEvent(this.buffer.trim());
           } catch {
             return null;
           }
@@ -118,11 +118,58 @@ export class ServiceLogStream {
       this.close();
     }
   }
+
+  private parseEvent(line: string): ServiceLogEvent {
+    const data = JSON.parse(line);
+    return {
+      type: data.type,
+      data: data.data,
+      exitCode: data.exit_code,
+      timestamp: data.timestamp,
+      logFiles: data.log_files,
+    };
+  }
 }
 
 interface ClientInfo {
   baseURL: string;
   token: string;
+}
+
+function servicesURL(client: ClientInfo, spriteName: string, suffix = ''): string {
+  return `${client.baseURL}/v1/sprites/${encodeURIComponent(spriteName)}/services${suffix}`;
+}
+
+function serviceFromAPI(data: any): ServiceWithState {
+  return {
+    name: data.name,
+    cmd: data.cmd,
+    args: data.args ?? [],
+    env: data.env,
+    dir: data.dir,
+    needs: data.needs ?? [],
+    httpPort: data.http_port,
+    state: data.state ? {
+      name: data.state.name,
+      status: data.state.status,
+      pid: data.state.pid,
+      startedAt: data.state.started_at,
+      error: data.state.error,
+      restartCount: data.state.restart_count,
+      nextRestartAt: data.state.next_restart_at,
+    } : undefined,
+  };
+}
+
+function serviceRequestToAPI(config: ServiceRequest): Record<string, unknown> {
+  return {
+    cmd: config.cmd,
+    ...(config.args !== undefined && { args: config.args }),
+    ...(config.env !== undefined && { env: config.env }),
+    ...(config.dir !== undefined && { dir: config.dir }),
+    ...(config.needs !== undefined && { needs: config.needs }),
+    ...(config.httpPort !== undefined && { http_port: config.httpPort }),
+  };
 }
 
 /**
@@ -133,7 +180,7 @@ export async function listServices(
   spriteName: string
 ): Promise<ServiceWithState[]> {
   const response = await fetch(
-    `${client.baseURL}/v1/sprites/${spriteName}/services`,
+    servicesURL(client, spriteName),
     {
       method: 'GET',
       headers: {
@@ -150,7 +197,9 @@ export async function listServices(
     );
   }
 
-  return (await response.json()) as ServiceWithState[];
+  const data = await response.json() as any;
+  const services = Array.isArray(data) ? data : data.services ?? [];
+  return services.map(serviceFromAPI);
 }
 
 /**
@@ -162,7 +211,7 @@ export async function getService(
   serviceName: string
 ): Promise<ServiceWithState> {
   const response = await fetch(
-    `${client.baseURL}/v1/sprites/${spriteName}/services/${serviceName}`,
+    servicesURL(client, spriteName, `/${encodeURIComponent(serviceName)}`),
     {
       method: 'GET',
       headers: {
@@ -184,7 +233,7 @@ export async function getService(
     );
   }
 
-  return (await response.json()) as ServiceWithState;
+  return serviceFromAPI(await response.json());
 }
 
 /**
@@ -198,7 +247,7 @@ export async function createService(
   config: ServiceRequest,
   duration?: string
 ): Promise<ServiceLogStream> {
-  let url = `${client.baseURL}/v1/sprites/${spriteName}/services/${serviceName}`;
+  let url = servicesURL(client, spriteName, `/${encodeURIComponent(serviceName)}`);
   if (duration) {
     url += `?duration=${duration}`;
   }
@@ -209,7 +258,7 @@ export async function createService(
       Authorization: `Bearer ${client.token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(config),
+    body: JSON.stringify(serviceRequestToAPI(config)),
   });
 
   if (response.status === 409) {
@@ -236,7 +285,7 @@ export async function deleteService(
   serviceName: string
 ): Promise<void> {
   const response = await fetch(
-    `${client.baseURL}/v1/sprites/${spriteName}/services/${serviceName}`,
+    servicesURL(client, spriteName, `/${encodeURIComponent(serviceName)}`),
     {
       method: 'DELETE',
       headers: {
@@ -274,7 +323,7 @@ export async function startService(
   serviceName: string,
   duration?: string
 ): Promise<ServiceLogStream> {
-  let url = `${client.baseURL}/v1/sprites/${spriteName}/services/${serviceName}/start`;
+  let url = servicesURL(client, spriteName, `/${encodeURIComponent(serviceName)}/start`);
   if (duration) {
     url += `?duration=${duration}`;
   }
@@ -311,7 +360,7 @@ export async function stopService(
   serviceName: string,
   timeout?: string
 ): Promise<ServiceLogStream> {
-  let url = `${client.baseURL}/v1/sprites/${spriteName}/services/${serviceName}/stop`;
+  let url = servicesURL(client, spriteName, `/${encodeURIComponent(serviceName)}/stop`);
   if (timeout) {
     url += `?timeout=${timeout}`;
   }
@@ -343,6 +392,47 @@ export async function stopService(
   return new ServiceLogStream(response);
 }
 
+/** Restart a service and stream stop/start progress. */
+export async function restartService(
+  client: ClientInfo,
+  spriteName: string,
+  serviceName: string,
+  duration?: string
+): Promise<ServiceLogStream> {
+  const url = new URL(servicesURL(client, spriteName, `/${encodeURIComponent(serviceName)}/restart`));
+  if (duration) url.searchParams.set('duration', duration);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${client.token}` },
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Failed to restart service (status ${response.status}): ${body}`);
+  }
+  return new ServiceLogStream(response);
+}
+
+/** Read buffered service logs and optionally follow new output. */
+export async function getServiceLogs(
+  client: ClientInfo,
+  spriteName: string,
+  serviceName: string,
+  options: { lines?: number; duration?: string } = {}
+): Promise<ServiceLogStream> {
+  const url = new URL(servicesURL(client, spriteName, `/${encodeURIComponent(serviceName)}/logs`));
+  if (options.lines !== undefined) url.searchParams.set('lines', options.lines.toString());
+  if (options.duration) url.searchParams.set('duration', options.duration);
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${client.token}` },
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Failed to get service logs (status ${response.status}): ${body}`);
+  }
+  return new ServiceLogStream(response);
+}
+
 /**
  * Send a signal to a service
  */
@@ -353,7 +443,7 @@ export async function signalService(
   signal: string
 ): Promise<void> {
   const response = await fetch(
-    `${client.baseURL}/v1/sprites/${spriteName}/services/signal`,
+    servicesURL(client, spriteName, '/signal'),
     {
       method: 'POST',
       headers: {

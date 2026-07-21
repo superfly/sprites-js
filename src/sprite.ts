@@ -3,7 +3,7 @@
  */
 
 import { SpritesClient } from './client.js';
-import { SpriteCommand, spawn, exec, execFile } from './exec.js';
+import { SpriteCommand, SessionKillStream, spawn, exec, execFile, execFileHTTP, killSession } from './exec.js';
 import { CheckpointStream, RestoreStream } from './checkpoint.js';
 import { ProxySession, proxyPort, proxyPorts } from './proxy.js';
 import {
@@ -14,9 +14,20 @@ import {
   deleteService,
   startService,
   stopService,
+  restartService,
+  getServiceLogs,
   signalService,
 } from './services.js';
-import { getNetworkPolicy, updateNetworkPolicy } from './policy.js';
+import {
+  getNetworkPolicy,
+  updateNetworkPolicy,
+  getPrivilegesPolicy,
+  updatePrivilegesPolicy,
+  deletePrivilegesPolicy,
+  getResourcesPolicy,
+  updateResourcesPolicy,
+  deleteResourcesPolicy,
+} from './policy.js';
 import { SpriteFilesystem } from './filesystem.js';
 import { ControlConnection, getControlConnection, closeControlConnection, hasControlConnection } from './control.js';
 import type {
@@ -31,7 +42,14 @@ import type {
   ServiceWithState,
   ServiceRequest,
   NetworkPolicy,
+  UpdateSpriteOptions,
+  RestartSpriteResult,
+  SpriteCheck,
+  HTTPExecOptions,
+  PrivilegesPolicy,
+  ResourcesPolicy,
 } from './types.js';
+import { PortWatcher } from './watch.js';
 
 /**
  * Represents a sprite instance
@@ -51,6 +69,13 @@ export class Sprite {
   updatedAt?: Date;
   url?: string;
   urlSettings?: URLSettings;
+  bucketName?: string;
+  primaryRegion?: string;
+  version?: string;
+  environmentVersion?: string;
+  labels: string[] = [];
+  lastRunningAt?: Date;
+  lastWarmingAt?: Date;
 
   constructor(name: string, client: SpritesClient) {
     this.name = name;
@@ -76,6 +101,11 @@ export class Sprite {
    */
   async execFile(file: string, args: string[] = [], options: ExecOptions = {}): Promise<ExecResult> {
     return execFile(this, file, args, options);
+  }
+
+  /** Execute a non-TTY command over HTTP without a WebSocket. */
+  async execFileHTTP(file: string, args: string[] = [], options: HTTPExecOptions = {}): Promise<ExecResult> {
+    return execFileHTTP(this, file, args, options);
   }
 
   /**
@@ -104,7 +134,7 @@ export class Sprite {
    * List active sessions
    */
   async listSessions(): Promise<Session[]> {
-    const response = await fetch(`${this.client.baseURL}/v1/sprites/${this.name}/exec`, {
+    const response = await fetch(`${this.baseURL()}/exec`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${this.client.token}`,
@@ -143,6 +173,18 @@ export class Sprite {
     return sessions;
   }
 
+  /** Kill an active session and stream progress. */
+  async killSession(sessionId: string, signal?: string, timeout?: string): Promise<SessionKillStream> {
+    return killSession(this, sessionId, signal, timeout);
+  }
+
+  /** Watch listening ports and future port changes. */
+  async watchPorts(): Promise<PortWatcher> {
+    const watcher = new PortWatcher(this.client, this.name);
+    await watcher.connect();
+    return watcher;
+  }
+
   /**
    * Delete this sprite
    */
@@ -164,6 +206,16 @@ export class Sprite {
     await this.client.upgradeSprite(this.name);
   }
 
+  /** Restart the machine backing this Sprite. */
+  async restart(): Promise<RestartSpriteResult> {
+    return this.client.restartSprite(this.name);
+  }
+
+  /** Check this Sprite's current health. */
+  async check(): Promise<SpriteCheck> {
+    return this.client.checkSprite(this.name);
+  }
+
   /**
    * Create a checkpoint with an optional comment.
    * Returns a CheckpointStream for reading progress messages.
@@ -171,7 +223,7 @@ export class Sprite {
   async createCheckpoint(comment?: string): Promise<CheckpointStream> {
     const body: any = {};
     if (comment) body.comment = comment;
-    const response = await fetch(`${this.client.baseURL}/v1/sprites/${this.name}/checkpoint`, {
+    const response = await fetch(`${this.baseURL()}/checkpoint`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.client.token}`,
@@ -192,7 +244,7 @@ export class Sprite {
    * @param historyFilter - Optional filter for checkpoint history
    */
   async listCheckpoints(historyFilter?: string): Promise<Checkpoint[]> {
-    let url = `${this.client.baseURL}/v1/sprites/${this.name}/checkpoints`;
+    let url = `${this.baseURL()}/checkpoints`;
     if (historyFilter) {
       url += `?history=${encodeURIComponent(historyFilter)}`;
     }
@@ -213,6 +265,9 @@ export class Sprite {
       createTime: new Date(cp.create_time),
       comment: cp.comment,
       history: cp.history,
+      isAuto: cp.is_auto,
+      sourceId: cp.source_id,
+      health: cp.health,
     }));
   }
 
@@ -220,7 +275,7 @@ export class Sprite {
    * Get checkpoint details
    */
   async getCheckpoint(id: string): Promise<Checkpoint> {
-    const response = await fetch(`${this.client.baseURL}/v1/sprites/${this.name}/checkpoints/${id}`, {
+    const response = await fetch(`${this.baseURL()}/checkpoints/${encodeURIComponent(id)}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${this.client.token}`,
@@ -240,6 +295,9 @@ export class Sprite {
       createTime: new Date(cp.create_time),
       comment: cp.comment,
       history: cp.history,
+      isAuto: cp.is_auto,
+      sourceId: cp.source_id,
+      health: cp.health,
     };
   }
 
@@ -248,7 +306,7 @@ export class Sprite {
    * Returns a RestoreStream for reading progress messages.
    */
   async restoreCheckpoint(id: string): Promise<RestoreStream> {
-    const response = await fetch(`${this.client.baseURL}/v1/sprites/${this.name}/checkpoints/${id}/restore`, {
+    const response = await fetch(`${this.baseURL()}/checkpoints/${encodeURIComponent(id)}/restore`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.client.token}`,
@@ -268,6 +326,11 @@ export class Sprite {
    */
   async updateURLSettings(settings: URLSettings): Promise<void> {
     await this.client.updateURLSettings(this.name, settings);
+  }
+
+  /** Partially update mutable settings and return the refreshed Sprite. */
+  async update(options: UpdateSpriteOptions): Promise<Sprite> {
+    return this.client.updateSprite(this.name, options);
   }
 
   /**
@@ -356,6 +419,17 @@ export class Sprite {
     return stopService(this.client, this.name, serviceName, timeout);
   }
 
+  async restartService(serviceName: string, duration?: string): Promise<ServiceLogStream> {
+    return restartService(this.client, this.name, serviceName, duration);
+  }
+
+  async getServiceLogs(
+    serviceName: string,
+    options: { lines?: number; duration?: string } = {}
+  ): Promise<ServiceLogStream> {
+    return getServiceLogs(this.client, this.name, serviceName, options);
+  }
+
   /**
    * Send a signal to a service
    * @param serviceName - Service to signal
@@ -379,6 +453,30 @@ export class Sprite {
    */
   async updateNetworkPolicy(policy: NetworkPolicy): Promise<void> {
     return updateNetworkPolicy(this.client, this.name, policy);
+  }
+
+  async getPrivilegesPolicy(): Promise<PrivilegesPolicy> {
+    return getPrivilegesPolicy(this.client, this.name);
+  }
+
+  async updatePrivilegesPolicy(policy: PrivilegesPolicy): Promise<void> {
+    return updatePrivilegesPolicy(this.client, this.name, policy);
+  }
+
+  async deletePrivilegesPolicy(): Promise<void> {
+    return deletePrivilegesPolicy(this.client, this.name);
+  }
+
+  async getResourcesPolicy(): Promise<ResourcesPolicy> {
+    return getResourcesPolicy(this.client, this.name);
+  }
+
+  async updateResourcesPolicy(policy: ResourcesPolicy): Promise<void> {
+    return updateResourcesPolicy(this.client, this.name, policy);
+  }
+
+  async deleteResourcesPolicy(): Promise<void> {
+    return deleteResourcesPolicy(this.client, this.name);
   }
 
   // ========== Filesystem API ==========
@@ -435,5 +533,8 @@ export class Sprite {
   hasControlConnection(): boolean {
     return hasControlConnection(this);
   }
-}
 
+  private baseURL(): string {
+    return `${this.client.baseURL}/v1/sprites/${encodeURIComponent(this.name)}`;
+  }
+}

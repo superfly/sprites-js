@@ -1,0 +1,64 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { CheckpointStream, RestoreStream } from './checkpoint.js';
+import { ServiceLogStream } from './services.js';
+
+function streamResponse(chunks: string[]): Response {
+  const encoder = new TextEncoder();
+  return new Response(new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+      controller.close();
+    },
+  }));
+}
+
+describe('checkpoint and restore streams', () => {
+  for (const [name, Stream] of [['CheckpointStream', CheckpointStream], ['RestoreStream', RestoreStream]] as const) {
+    it(`${name} reads chunked NDJSON, skips malformed lines, and iterates`, async () => {
+      const stream = new Stream(streamResponse(['bad\n{"type":"info",', '"data":"one"}\n\n{"type":"error","error":"two"}']));
+      assert.deepEqual(await stream.next(), { type: 'info', data: 'one' });
+      const rest = [];
+      for await (const message of stream) rest.push(message);
+      assert.deepEqual(rest, [{ type: 'error', error: 'two' }]);
+      assert.equal(await stream.next(), null);
+    });
+
+    it(`${name} processes all messages and can be closed`, async () => {
+      const stream = new Stream(streamResponse(['{"type":"info","data":"one"}\n{"type":"info","data":"two"}\n']));
+      const messages: string[] = [];
+      await stream.processAll(message => { messages.push(message.data!); });
+      assert.deepEqual(messages, ['one', 'two']);
+      stream.close();
+      assert.equal(await stream.next(), null);
+    });
+
+    it(`${name} rejects responses without a body`, () => {
+      assert.throws(() => new Stream(new Response(null)), /Response has no body/);
+    });
+  }
+});
+
+describe('ServiceLogStream', () => {
+  it('maps snake_case events through next, processAll, and async iteration', async () => {
+    const stream = new ServiceLogStream(streamResponse([
+      'malformed\n{"type":"stdout","data":"one","timestamp":1}\n',
+      '{"type":"exit","exit_code":3,"timestamp":2,"log_files":{"stderr":"err.log"}}',
+    ]));
+    assert.equal((await stream.next())?.data, 'one');
+    const events = [];
+    for await (const event of stream) events.push(event);
+    assert.equal(events[0].exitCode, 3);
+    assert.deepEqual(events[0].logFiles, { stderr: 'err.log' });
+
+    const processed: string[] = [];
+    const second = new ServiceLogStream(streamResponse(['{"type":"stopped","timestamp":3}\n']));
+    await second.processAll(event => { processed.push(event.type); });
+    assert.deepEqual(processed, ['stopped']);
+    second.close();
+  });
+
+  it('rejects responses without a body', () => {
+    assert.throws(() => new ServiceLogStream(new Response(null)), /Response has no body/);
+  });
+});

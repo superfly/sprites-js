@@ -20,6 +20,8 @@ export interface ClientOptions {
 export interface URLSettings {
   /** Auth mode: "public" for no auth, "sprite" for Sprite authentication */
   auth?: string;
+  /** Who may use private Sprite authentication (for example, "admins") */
+  privateAccess?: 'admins' | 'org_users';
 }
 
 /**
@@ -56,6 +58,8 @@ export interface SpawnOptions {
   sessionId?: string;
   /** Enable control mode (requires detachable or sessionId) */
   controlMode?: boolean;
+  /** How long the command may keep running after disconnect (for example, "30s") */
+  maxRunAfterDisconnect?: string;
 }
 
 /**
@@ -104,6 +108,20 @@ export interface SpriteInfo {
   url?: string;
   /** URL authentication settings */
   urlSettings?: URLSettings;
+  /** Storage bucket name, when returned by the API */
+  bucketName?: string;
+  /** Primary deployment region, when returned by the API */
+  primaryRegion?: string;
+  /** Running Sprite runtime version */
+  version?: string;
+  /** Base environment image version */
+  environmentVersion?: string;
+  /** Labels attached to the Sprite */
+  labels?: string[];
+  /** Most recent transition to the running state */
+  lastRunningAt?: Date;
+  /** Most recent transition to the warm state */
+  lastWarmingAt?: Date;
 }
 
 /**
@@ -116,6 +134,8 @@ export interface ListOptions {
   maxResults?: number;
   /** Continuation token for pagination */
   continuationToken?: string;
+  /** Return minimal entries optimized for bulk loading */
+  bulkLoad?: boolean;
 }
 
 /**
@@ -128,6 +148,37 @@ export interface SpriteList {
   hasMore: boolean;
   /** Token for fetching next page */
   nextContinuationToken?: string;
+  /** Number of running Sprites in this result */
+  running?: number;
+  /** Number of warm Sprites in this result */
+  warm?: number;
+  /** Number of cold Sprites in this result */
+  cold?: number;
+  /** Organization name associated with the access token */
+  organizationName?: string;
+  /** Maximum number of running Sprites */
+  runningLimit?: number;
+  /** Maximum number of warm Sprites */
+  warmLimit?: number;
+}
+
+/** A state update from the streaming Sprite list endpoint. */
+export interface SpriteStateEvent {
+  type?: 'heartbeat';
+  name?: string;
+  status?: string;
+  runningVersion?: string;
+  lastRunningAt?: Date;
+  lastWarmingAt?: Date;
+  timestamp?: Date;
+  organization: {
+    name?: string;
+    running: number;
+    warm: number;
+    cold: number;
+    runningLimit?: number;
+    warmLimit?: number;
+  };
 }
 
 /**
@@ -165,6 +216,14 @@ export interface PortNotification {
   /** Process ID */
   pid: number;
 }
+
+/** Initial snapshot emitted by a port watcher. */
+export interface PortList {
+  type: 'port_list';
+  ports: PortNotification[];
+}
+
+export type PortWatchEvent = PortList | PortNotification;
 
 /**
  * Organization information
@@ -446,6 +505,69 @@ export interface CreateSpriteRequest {
   config?: SpriteConfig;
   /** Optional environment variables */
   environment?: Record<string, string>;
+  /** URL access settings */
+  urlSettings?: URLSettings;
+  /** Labels to attach */
+  labels?: string[];
+  /** Wait for capacity instead of failing immediately */
+  waitForCapacity?: boolean;
+  /** Runtime image variant */
+  runtime?: 'default' | 'dev';
+}
+
+/** Options accepted when creating a Sprite. */
+export interface CreateSpriteOptions {
+  config?: SpriteConfig;
+  environment?: Record<string, string>;
+  urlSettings?: URLSettings;
+  labels?: string[];
+  waitForCapacity?: boolean;
+  runtime?: 'default' | 'dev';
+}
+
+/** Mutable Sprite fields. Omitted fields are left unchanged. */
+export interface UpdateSpriteOptions {
+  urlSettings?: URLSettings;
+  labels?: string[];
+}
+
+/** Response returned after requesting a Sprite restart. */
+export interface RestartSpriteResult {
+  spriteName: string;
+  machineId: string;
+  message: string;
+}
+
+/** Options for HTTP command execution without WebSockets. */
+export interface HTTPExecOptions extends Omit<
+  ExecOptions,
+  'tty' | 'sessionId' | 'controlMode' | 'detachable' | 'maxRunAfterDisconnect'
+> {
+  /** Bytes forwarded to stdin. Supplying this enables stdin. */
+  input?: string | Buffer;
+  /** Abort the HTTP request. */
+  signal?: AbortSignal;
+  /** Abort the HTTP request after this many milliseconds. */
+  timeout?: number;
+}
+
+/** Progress event returned while killing an exec session. */
+export interface SessionKillEvent {
+  type: 'signal' | 'timeout' | 'exited' | 'killed' | 'error' | 'complete';
+  message?: string;
+  signal?: string;
+  pid?: number;
+  exitCode?: number;
+}
+
+/** Current Sprite health information. */
+export interface SpriteCheck {
+  spriteName: string;
+  spriteId: string;
+  status: string;
+  reason?: string;
+  checkedAt: Date;
+  elapsed?: number;
 }
 
 /**
@@ -460,6 +582,12 @@ export interface Checkpoint {
   comment?: string;
   /** Optional history entries */
   history?: string[];
+  /** Whether the checkpoint was created automatically */
+  isAuto?: boolean;
+  /** Parent checkpoint identifier */
+  sourceId?: string;
+  /** Empty when healthy, otherwise an API health marker */
+  health?: string;
 }
 
 /**
@@ -516,6 +644,10 @@ export interface Service {
   cmd: string;
   /** Command arguments */
   args: string[];
+  /** Environment variables added to the base service environment */
+  env?: Record<string, string>;
+  /** Working directory */
+  dir?: string;
   /** Service dependencies */
   needs: string[];
   /** Optional HTTP port for proxy routing */
@@ -558,6 +690,10 @@ export interface ServiceRequest {
   cmd: string;
   /** Command arguments */
   args?: string[];
+  /** Environment variables added to the base service environment */
+  env?: Record<string, string>;
+  /** Working directory */
+  dir?: string;
   /** Service dependencies */
   needs?: string[];
   /** Optional HTTP port for proxy routing */
@@ -598,6 +734,21 @@ export interface PolicyRule {
 export interface NetworkPolicy {
   /** Array of policy rules */
   rules: PolicyRule[];
+}
+
+/** Process privilege restrictions. */
+export interface PrivilegesPolicy {
+  profile?: '' | 'minimal' | 'standard' | 'privileged';
+  devices?: string[];
+  noNewPrivileges?: boolean;
+}
+
+/** Memory resource policy. */
+export interface ResourcesPolicy {
+  memory?: {
+    limitMB: number;
+    autoscale?: boolean;
+  };
 }
 
 // ========== Filesystem Types ==========
@@ -649,6 +800,7 @@ export type FilesystemErrorCode =
   | 'ENOTDIR'   // Not a directory
   | 'EISDIR'    // Is a directory
   | 'EACCES'    // Permission denied
+  | 'EPERM'     // Operation not permitted
   | 'ENOTEMPTY' // Directory not empty
   | 'EINVAL'    // Invalid argument
   | 'EIO'       // I/O error
@@ -677,6 +829,10 @@ export interface ReaddirOptions {
   withFileTypes?: boolean;
   /** Encoding for file names (default: 'utf8') */
   encoding?: BufferEncoding;
+  /** Recursively list matching entries */
+  recursive?: boolean;
+  /** Optional glob pattern */
+  pattern?: string;
 }
 
 /**
@@ -697,6 +853,8 @@ export interface RmOptions {
   force?: boolean;
   /** Recursively remove directory contents */
   recursive?: boolean;
+  /** Perform the operation as root */
+  asRoot?: boolean;
 }
 
 /**
@@ -705,6 +863,10 @@ export interface RmOptions {
 export interface CopyFileOptions {
   /** Recursively copy directory contents */
   recursive?: boolean;
+  /** Preserve ownership and mode */
+  preserveAttrs?: boolean;
+  /** Perform the operation as root */
+  asRoot?: boolean;
 }
 
 /**
@@ -713,6 +875,36 @@ export interface CopyFileOptions {
 export interface ChmodOptions {
   /** Recursively change mode */
   recursive?: boolean;
+  /** Perform the operation as root */
+  asRoot?: boolean;
+}
+
+export interface RenameOptions {
+  asRoot?: boolean;
+}
+
+export interface ChownOptions {
+  /** User ID or user name */
+  uid?: number | string;
+  /** Group ID or group name */
+  gid?: number | string;
+  recursive?: boolean;
+  asRoot?: boolean;
+}
+
+export interface FilesystemWatchOptions {
+  recursive?: boolean;
+}
+
+export interface FilesystemWatchEvent {
+  type: 'subscribed' | 'event' | 'error';
+  paths?: string[];
+  path?: string;
+  event?: 'write' | 'create' | 'remove' | 'rename' | 'chmod';
+  timestamp?: string;
+  size?: number;
+  isDir?: boolean;
+  message?: string;
 }
 
 /**
@@ -788,4 +980,3 @@ export interface FsErrorResponse {
   code?: string;
   path?: string;
 }
-
