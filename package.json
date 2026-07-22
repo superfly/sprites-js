@@ -1,6 +1,6 @@
 {
   "name": "@fly/sprites",
-  "version": "0.0.2-dev",
+  "version": "0.1.0-dev",
   "description": "JavaScript/TypeScript SDK for Sprites - remote command execution",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
