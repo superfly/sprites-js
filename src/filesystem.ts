@@ -4,16 +4,20 @@
  */
 
 import { SpritesClient } from './client.js';
+import { FilesystemError } from './types.js';
+import { FilesystemWatcher } from './watch.js';
 import type {
   Stats,
   Dirent,
-  FilesystemError,
   FilesystemErrorCode,
   ReaddirOptions,
   MkdirOptions,
   RmOptions,
   CopyFileOptions,
   ChmodOptions,
+  RenameOptions,
+  ChownOptions,
+  FilesystemWatchOptions,
   FsEntry,
   FsListResponse,
   FsErrorResponse,
@@ -92,13 +96,7 @@ function createError(
   path: string,
   syscall?: string
 ): FilesystemError {
-  // Import dynamically to avoid circular dependency
-  const error = new Error(message) as FilesystemError;
-  error.name = 'FilesystemError';
-  (error as any).code = code;
-  (error as any).path = path;
-  (error as any).syscall = syscall;
-  return error;
+  return new FilesystemError(message, code, path, syscall);
 }
 
 /**
@@ -113,6 +111,7 @@ function parseErrorCode(serverCode?: string): FilesystemErrorCode {
     'ENOTDIR': 'ENOTDIR',
     'EISDIR': 'EISDIR',
     'EACCES': 'EACCES',
+    'EPERM': 'EPERM',
     'ENOTEMPTY': 'ENOTEMPTY',
     'EINVAL': 'EINVAL',
     'EIO': 'EIO',
@@ -157,7 +156,7 @@ export class SpriteFilesystem {
    * Build the full URL for a filesystem endpoint
    */
   private buildURL(endpoint: string): string {
-    return `${this.client.baseURL}/v1/sprites/${this.spriteName}/fs${endpoint}`;
+    return `${this.client.baseURL}/v1/sprites/${encodeURIComponent(this.spriteName)}/fs${endpoint}`;
   }
 
   /**
@@ -263,12 +262,14 @@ export class SpriteFilesystem {
    * @param path - Directory path (relative to workingDir or absolute)
    * @param options - If withFileTypes is true, returns Dirent objects
    */
-  async readdir(path: string, options?: { withFileTypes?: false }): Promise<string[]>;
-  async readdir(path: string, options: { withFileTypes: true }): Promise<Dirent[]>;
+  async readdir(path: string, options?: ReaddirOptions & { withFileTypes?: false }): Promise<string[]>;
+  async readdir(path: string, options: ReaddirOptions & { withFileTypes: true }): Promise<Dirent[]>;
   async readdir(path: string, options?: ReaddirOptions): Promise<string[] | Dirent[]> {
     const url = new URL(this.buildURL('/list'));
     url.searchParams.set('path', path);
     url.searchParams.set('workingDir', this.workingDir);
+    if (options?.recursive) url.searchParams.set('recursive', 'true');
+    if (options?.pattern) url.searchParams.set('pattern', options.pattern);
 
     const response = await fetch(url.toString(), {
       method: 'GET',
@@ -343,6 +344,7 @@ export class SpriteFilesystem {
     if (options?.recursive) {
       url.searchParams.set('recursive', 'true');
     }
+    if (options?.asRoot) url.searchParams.set('asRoot', 'true');
 
     const response = await fetch(url.toString(), {
       method: 'DELETE',
@@ -389,7 +391,7 @@ export class SpriteFilesystem {
    * @param oldPath - Current path (relative to workingDir or absolute)
    * @param newPath - New path (relative to workingDir or absolute)
    */
-  async rename(oldPath: string, newPath: string): Promise<void> {
+  async rename(oldPath: string, newPath: string, options?: RenameOptions): Promise<void> {
     const url = this.buildURL('/rename');
 
     const response = await fetch(url, {
@@ -402,6 +404,7 @@ export class SpriteFilesystem {
         source: oldPath,
         dest: newPath,
         workingDir: this.workingDir,
+        asRoot: options?.asRoot,
       }),
     });
 
@@ -430,6 +433,8 @@ export class SpriteFilesystem {
         dest: dest,
         workingDir: this.workingDir,
         recursive: options?.recursive,
+        preserveAttrs: options?.preserveAttrs,
+        asRoot: options?.asRoot,
       }),
     });
 
@@ -458,6 +463,7 @@ export class SpriteFilesystem {
         workingDir: this.workingDir,
         mode: mode.toString(8).padStart(4, '0'),
         recursive: options?.recursive,
+        asRoot: options?.asRoot,
       }),
     });
 
@@ -480,6 +486,42 @@ export class SpriteFilesystem {
       }
       throw error;
     }
+  }
+
+  /** Change file ownership by numeric ID or user/group name. */
+  async chown(path: string, options: ChownOptions): Promise<void> {
+    if (options.uid === undefined && options.gid === undefined) {
+      throw new TypeError('uid or gid is required');
+    }
+    const response = await fetch(this.buildURL('/chown'), {
+      method: 'POST',
+      headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        path,
+        workingDir: this.workingDir,
+        uid: options.uid,
+        gid: options.gid,
+        recursive: options.recursive,
+        asRoot: options.asRoot,
+      }),
+    });
+    if (!response.ok) await this.handleError(response, path, 'chown');
+  }
+
+  /** Watch one or more paths for filesystem changes. */
+  async watch(
+    paths: string | string[],
+    options: FilesystemWatchOptions = {}
+  ): Promise<FilesystemWatcher> {
+    const watcher = new FilesystemWatcher(
+      this.client,
+      this.spriteName,
+      Array.isArray(paths) ? paths : [paths],
+      this.workingDir,
+      options.recursive === true
+    );
+    await watcher.connect();
+    return watcher;
   }
 
   /**

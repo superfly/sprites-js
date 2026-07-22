@@ -60,7 +60,7 @@ export class ProxySession extends EventEmitter {
     if (baseURL.startsWith('http')) {
       baseURL = 'ws' + baseURL.substring(4);
     }
-    const wsURL = `${baseURL}/v1/sprites/${this.spriteName}/proxy`;
+    const wsURL = `${baseURL}/v1/sprites/${encodeURIComponent(this.spriteName)}/proxy`;
 
     try {
       const ws = new WebSocket(wsURL, {
