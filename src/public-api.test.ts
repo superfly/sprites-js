@@ -161,6 +161,19 @@ describe('SpriteCommand and Sprite execution interfaces', () => {
     assert.equal(ws.readyState, MockWebSocket.CLOSED);
   });
 
+  it('closes the exec WebSocket when maxBuffer is exceeded', async () => {
+    installWebSocket();
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    const execution = sprite.execFile('printf', [], { maxBuffer: 3 });
+    await new Promise(resolve => setImmediate(resolve));
+
+    const ws = MockWebSocket.instances[0];
+    ws.dispatch('message', { data: binary(StreamID.Stdout, ...Buffer.from('large')) });
+
+    await assert.rejects(execution, /stdout maxBuffer exceeded/);
+    assert.equal(ws.readyState, MockWebSocket.CLOSED);
+  });
+
   it('closes the exec WebSocket when execution times out', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     installWebSocket();
