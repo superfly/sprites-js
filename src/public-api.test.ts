@@ -86,6 +86,22 @@ describe('package exports', () => {
 });
 
 describe('SpriteCommand and Sprite execution interfaces', () => {
+  it('keeps a quiet command open until the server exits it', async (t) => {
+    t.mock.timers.enable({ apis: ['setInterval', 'Date'] });
+    installWebSocket();
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    const command = new SpriteCommand(sprite, 'sleep', ['120'], { tty: false });
+    await command.start();
+
+    const ws = MockWebSocket.instances[0];
+    t.mock.timers.tick(60_000);
+
+    assert.equal(ws.readyState, MockWebSocket.OPEN);
+    const waited = command.wait();
+    ws.dispatch('message', { data: binary(StreamID.Exit, 0) });
+    assert.equal(await waited, 0);
+  });
+
   it('starts, streams, signals, resizes, reports exit, and waits', async () => {
     installWebSocket();
     const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo/name');

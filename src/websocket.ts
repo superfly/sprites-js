@@ -10,10 +10,6 @@ import { EventEmitter } from 'node:events';
 import { Writable } from 'node:stream';
 import { StreamID, ControlMessage } from './types.js';
 
-// WebSocket keepalive timeouts (matching Go SDK)
-const WS_PING_INTERVAL = 15_000; // 15 seconds
-const WS_PONG_WAIT = 45_000; // 45 seconds
-
 /**
  * WebSocket command execution handler
  */
@@ -23,9 +19,6 @@ export class WSCommand extends EventEmitter {
   private tty: boolean;
   private started: boolean = false;
   private done: boolean = false;
-  private pingInterval: ReturnType<typeof setInterval> | null = null;
-  private pongTimeout: ReturnType<typeof setTimeout> | null = null;
-  private lastPongTime: number = 0;
 
   /** Whether this is attaching to an existing session */
   isAttach: boolean = false;
@@ -77,9 +70,6 @@ export class WSCommand extends EventEmitter {
               return;
             }
           }
-
-          // Start keepalive ping/pong
-          this.startKeepalive();
 
           resolved = true;
           resolve();
@@ -149,61 +139,9 @@ export class WSCommand extends EventEmitter {
   }
 
   /**
-   * Start keepalive ping/pong mechanism
-   */
-  private startKeepalive(): void {
-    this.lastPongTime = Date.now();
-
-    // Send pings at regular intervals
-    this.pingInterval = setInterval(() => {
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-        this.stopKeepalive();
-        return;
-      }
-
-      // Check if we've received a pong recently
-      const timeSinceLastPong = Date.now() - this.lastPongTime;
-      if (timeSinceLastPong > WS_PONG_WAIT) {
-        // Connection appears dead
-        this.emit('error', new Error('WebSocket keepalive timeout'));
-        this.close();
-        return;
-      }
-
-      // Note: Browser WebSocket API doesn't expose ping/pong directly.
-      // Node.js WebSocket implementation may support it differently.
-      // The server-side handles keepalive; we just track activity.
-    }, WS_PING_INTERVAL);
-  }
-
-  /**
-   * Stop keepalive mechanism
-   */
-  private stopKeepalive(): void {
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = null;
-    }
-    if (this.pongTimeout) {
-      clearTimeout(this.pongTimeout);
-      this.pongTimeout = null;
-    }
-  }
-
-  /**
-   * Reset keepalive timer (call on any message received)
-   */
-  private resetKeepalive(): void {
-    this.lastPongTime = Date.now();
-  }
-
-  /**
    * Handle incoming WebSocket messages
    */
   private handleMessage(event: MessageEvent): void {
-    // Reset keepalive on any message received
-    this.resetKeepalive();
-
     if (this.tty) {
       // TTY mode
       if (typeof event.data === 'string') {
@@ -255,8 +193,6 @@ export class WSCommand extends EventEmitter {
    * Handle WebSocket close
    */
   private handleClose(event: CloseEvent): void {
-    this.stopKeepalive();
-
     if (!this.done) {
       this.done = true;
 
@@ -348,7 +284,6 @@ export class WSCommand extends EventEmitter {
    * Close the WebSocket connection
    */
   close(): void {
-    this.stopKeepalive();
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close(1000, '');
     }
@@ -369,4 +304,3 @@ export class WSCommand extends EventEmitter {
     });
   }
 }
-
