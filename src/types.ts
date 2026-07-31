@@ -70,6 +70,10 @@ export interface ExecOptions extends SpawnOptions {
   encoding?: BufferEncoding;
   /** Maximum buffer size for output (default: 10MB) */
   maxBuffer?: number;
+  /** Abort command execution and close its WebSocket. */
+  signal?: AbortSignal;
+  /** Abort command execution after this many milliseconds. */
+  timeoutMs?: number;
 }
 
 /**

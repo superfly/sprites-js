@@ -227,6 +227,13 @@ export class SpriteCommand extends EventEmitter {
   }
 
   /**
+   * Close the command's WebSocket connection.
+   */
+  close(): void {
+    this.wsCmd.close();
+  }
+
+  /**
    * Send a signal to the remote process
    */
   signal(sig: string): void {
@@ -292,6 +299,11 @@ export async function execFile(
   args: string[] = [],
   options: ExecOptions = {}
 ): Promise<ExecResult> {
+  validateExecCancellationOptions(options);
+  if (options.signal?.aborted) {
+    throw abortError();
+  }
+
   // Use control mode if enabled and not attaching to a session
   if (!options.sessionId && sprite.useControlMode()) {
     try {
@@ -311,26 +323,59 @@ export async function execFile(
     const stderrChunks: Buffer[] = [];
     let stdoutLength = 0;
     let stderrLength = 0;
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = () => {
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
+      options.signal?.removeEventListener('abort', onAbort);
+      cmd.close();
+    };
+
+    const settle = (complete: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      complete();
+    };
+
+    const rejectWith = (error: Error) => {
+      settle(() => reject(error));
+    };
+
+    const resolveWith = (result: ExecResult) => {
+      settle(() => resolve(result));
+    };
+
+    const onAbort = () => {
+      cmd.kill();
+      rejectWith(abortError());
+    };
 
     cmd.stdout.on('data', (chunk: Buffer) => {
+      if (settled) return;
       stdoutChunks.push(chunk);
       stdoutLength += chunk.length;
       if (stdoutLength > maxBuffer) {
         cmd.kill();
-        reject(new Error(`stdout maxBuffer exceeded`));
+        rejectWith(new Error(`stdout maxBuffer exceeded`));
       }
     });
 
     cmd.stderr.on('data', (chunk: Buffer) => {
+      if (settled) return;
       stderrChunks.push(chunk);
       stderrLength += chunk.length;
       if (stderrLength > maxBuffer) {
         cmd.kill();
-        reject(new Error(`stderr maxBuffer exceeded`));
+        rejectWith(new Error(`stderr maxBuffer exceeded`));
       }
     });
 
     cmd.on('exit', (code: number) => {
+      if (settled) return;
       const stdoutBuffer = Buffer.concat(stdoutChunks);
       const stderrBuffer = Buffer.concat(stderrChunks);
 
@@ -342,17 +387,25 @@ export async function execFile(
 
       if (code !== 0) {
         const error = new ExecError(`Command failed with exit code ${code}`, result);
-        reject(error);
+        rejectWith(error);
       } else {
-        resolve(result);
+        resolveWith(result);
       }
     });
 
     cmd.on('error', (error: Error) => {
-      reject(error);
+      rejectWith(error);
     });
 
-    cmd.start().catch(reject);
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    if (options.timeoutMs !== undefined) {
+      timeout = setTimeout(() => {
+        cmd.kill();
+        rejectWith(new Error(`Command timed out after ${options.timeoutMs} ms`));
+      }, options.timeoutMs);
+    }
+
+    cmd.start().catch(rejectWith);
   });
 }
 
@@ -520,34 +573,75 @@ async function execFileViaControl(
       const stderrChunks: Buffer[] = [];
       let stdoutLength = 0;
       let stderrLength = 0;
+      let settled = false;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+
+      const cleanup = () => {
+        if (timeout !== undefined) {
+          clearTimeout(timeout);
+        }
+        options.signal?.removeEventListener('abort', onAbort);
+        op.close();
+      };
+
+      const settle = (complete: () => void) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        complete();
+      };
+
+      const rejectWith = (error: Error) => {
+        settle(() => reject(error));
+      };
+
+      const resolveWith = (result: ExecResult) => {
+        settle(() => resolve(result));
+      };
+
+      const onAbort = () => {
+        op.signal('TERM');
+        rejectWith(abortError());
+      };
 
       op.on('stdout', (data: Buffer) => {
+        if (settled) return;
         stdoutChunks.push(data);
         stdoutLength += data.length;
         if (stdoutLength > maxBuffer) {
           op.signal('KILL');
-          reject(new Error(`stdout maxBuffer exceeded`));
+          rejectWith(new Error(`stdout maxBuffer exceeded`));
         }
       });
 
       op.on('stderr', (data: Buffer) => {
+        if (settled) return;
         stderrChunks.push(data);
         stderrLength += data.length;
         if (stderrLength > maxBuffer) {
           op.signal('KILL');
-          reject(new Error(`stderr maxBuffer exceeded`));
+          rejectWith(new Error(`stderr maxBuffer exceeded`));
         }
       });
 
       op.on('error', (error: Error) => {
-        reject(error);
+        rejectWith(error);
       });
 
       // Send stdin EOF since we're not providing input
       op.sendEOF();
 
+      options.signal?.addEventListener('abort', onAbort, { once: true });
+      if (options.timeoutMs !== undefined) {
+        timeout = setTimeout(() => {
+          op.signal('TERM');
+          rejectWith(new Error(`Command timed out after ${options.timeoutMs} ms`));
+        }, options.timeoutMs);
+      }
+
       // Wait for completion
       op.wait().then((code) => {
+        if (settled) return;
         const stdoutBuffer = Buffer.concat(stdoutChunks);
         const stderrBuffer = Buffer.concat(stderrChunks);
 
@@ -559,14 +653,29 @@ async function execFileViaControl(
 
         if (code !== 0) {
           const error = new ExecError(`Command failed with exit code ${code}`, result);
-          reject(error);
+          rejectWith(error);
         } else {
-          resolve(result);
+          resolveWith(result);
         }
-      }).catch(reject);
+      }).catch(rejectWith);
     });
   } finally {
     // Always release the connection back to the pool
     releaseControlConnection(sprite, cc);
   }
+}
+
+function validateExecCancellationOptions(options: ExecOptions): void {
+  if (
+    options.timeoutMs !== undefined &&
+    (!Number.isFinite(options.timeoutMs) || options.timeoutMs < 0)
+  ) {
+    throw new TypeError('timeoutMs must be a non-negative finite number');
+  }
+}
+
+function abortError(): Error {
+  const error = new Error('Command execution was aborted');
+  error.name = 'AbortError';
+  return error;
 }

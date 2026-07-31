@@ -23,6 +23,7 @@ export class WSCommand extends EventEmitter {
   private tty: boolean;
   private started: boolean = false;
   private done: boolean = false;
+  private closeRequested: boolean = false;
   private pingInterval: ReturnType<typeof setInterval> | null = null;
   private pongTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastPongTime: number = 0;
@@ -68,6 +69,11 @@ export class WSCommand extends EventEmitter {
         this.ws.binaryType = 'arraybuffer';
 
         this.ws.addEventListener('open', async () => {
+          if (this.closeRequested) {
+            this.ws?.close(1000, '');
+            return;
+          }
+
           // When attaching to an existing session, wait for session_info to determine TTY mode
           if (this.isAttach) {
             try {
@@ -349,6 +355,7 @@ export class WSCommand extends EventEmitter {
    */
   close(): void {
     this.stopKeepalive();
+    this.closeRequested = true;
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close(1000, '');
     }
@@ -369,4 +376,3 @@ export class WSCommand extends EventEmitter {
     });
   }
 }
-

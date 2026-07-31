@@ -162,6 +162,8 @@ interface SpawnOptions {
 Extends SpawnOptions with:
 - `encoding?: BufferEncoding` - Output encoding (default: 'utf8')
 - `maxBuffer?: number` - Maximum buffer size (default: 10MB)
+- `signal?: AbortSignal` - Abort execution and close its WebSocket
+- `timeoutMs?: number` - Abort execution after this many milliseconds
 
 ## Examples
 

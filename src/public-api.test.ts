@@ -148,6 +148,46 @@ describe('SpriteCommand and Sprite execution interfaces', () => {
     await assert.rejects(filePromise, (error: any) => error.exitCode === 2 && Buffer.isBuffer(error.stderr));
   });
 
+  it('closes the exec WebSocket when execution fails', async () => {
+    installWebSocket();
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    const execution = sprite.execFile('command');
+    await new Promise(resolve => setImmediate(resolve));
+
+    const ws = MockWebSocket.instances[0];
+    ws.dispatch('error', { message: 'connection failed' });
+
+    await assert.rejects(execution, /connection failed/);
+    assert.equal(ws.readyState, MockWebSocket.CLOSED);
+  });
+
+  it('closes the exec WebSocket when execution times out', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    installWebSocket();
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    const execution = sprite.execFile('sleep', ['120'], { timeoutMs: 50 });
+    await new Promise(resolve => setImmediate(resolve));
+
+    const ws = MockWebSocket.instances[0];
+    t.mock.timers.tick(50);
+
+    await assert.rejects(execution, /timed out after 50 ms/);
+    assert.equal(ws.readyState, MockWebSocket.CLOSED);
+  });
+
+  it('closes a connecting exec WebSocket when execution is aborted', async () => {
+    installWebSocket();
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    const abort = new AbortController();
+    const execution = sprite.execFile('sleep', ['120'], { signal: abort.signal });
+
+    abort.abort();
+
+    await assert.rejects(execution, (error: any) => error.name === 'AbortError');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(MockWebSocket.instances[0].readyState, MockWebSocket.CLOSED);
+  });
+
   it('executes over HTTP and streams session-kill progress', async () => {
     const encoder = new TextEncoder();
     const responses = [
