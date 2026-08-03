@@ -72,8 +72,8 @@ export interface ExecOptions extends SpawnOptions {
   maxBuffer?: number;
   /** Abort command execution and close its WebSocket. */
   signal?: AbortSignal;
-  /** Abort command execution after this many milliseconds. */
-  timeoutMs?: number;
+  /** Abort command execution after this many milliseconds. 0 disables the timeout. */
+  timeout?: number;
 }
 
 /**

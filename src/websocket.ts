@@ -356,7 +356,16 @@ export class WSCommand extends EventEmitter {
   close(): void {
     this.stopKeepalive();
     this.closeRequested = true;
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+
+    if (!this.done) {
+      this.done = true;
+      this.emit('exit', this.exitCode);
+    }
+
+    if (this.ws && (
+      this.ws.readyState === WebSocket.CONNECTING ||
+      this.ws.readyState === WebSocket.OPEN
+    )) {
       this.ws.close(1000, '');
     }
   }

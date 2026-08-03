@@ -134,6 +134,7 @@ Represents a running command. Extends EventEmitter.
 **Methods:**
 - `wait(): Promise<number>` - Wait for exit and return exit code
 - `kill(signal?: string): void` - Kill the command
+- `close(): void` - Close the command's WebSocket and end its output streams
 - `resize(cols: number, rows: number): void` - Resize TTY (if TTY mode enabled)
 - `exitCode(): number` - Get exit code (-1 if not exited)
 
@@ -163,7 +164,7 @@ Extends SpawnOptions with:
 - `encoding?: BufferEncoding` - Output encoding (default: 'utf8')
 - `maxBuffer?: number` - Maximum buffer size (default: 10MB)
 - `signal?: AbortSignal` - Abort execution and close its WebSocket
-- `timeoutMs?: number` - Abort execution after this many milliseconds
+- `timeout?: number` - Abort execution after this many milliseconds (`0` disables the timeout)
 
 ## Examples
 
