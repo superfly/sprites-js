@@ -3,7 +3,7 @@ import {
   detectOnce,
   headersFor,
   userAgentSuffix,
-} from '@superfly/client-signals';
+} from '@fly/client-signals';
 
 const DISABLE_VALUES = new Set(['0', 'off', 'false', 'no', 'disabled']);
 const require = createRequire(import.meta.url);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { resetCachedForTest } from '@superfly/client-signals';
+import { resetCachedForTest } from '@fly/client-signals';
 import { resetSignalHeadersForTest, signalHeaders } from './client-signals.js';
 
 const originalSignalsSetting = process.env.SPRITES_CLIENT_SIGNALS;

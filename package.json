@@ -51,10 +51,10 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@superfly/client-signals": "file:vendor/client-signals"
+    "@fly/client-signals": "file:vendor/client-signals"
   },
   "bundledDependencies": [
-    "@superfly/client-signals"
+    "@fly/client-signals"
   ],
   "devDependencies": {
     "@types/node": "^24.0.0",

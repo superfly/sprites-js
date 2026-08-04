@@ -1,5 +1,5 @@
 {
-  "name": "@superfly/client-signals",
+  "name": "@fly/client-signals",
   "version": "0.4.3",
   "description": "Privacy-safe client signals for CLI HTTP traffic.",
   "type": "module",
