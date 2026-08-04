@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { signalHeaders } from './client-signals.js';
+import { authHeaders } from './client-signals.js';
 import type { SpritesClient } from './client.js';
 import type { FilesystemWatchEvent, PortWatchEvent } from './types.js';
 
@@ -17,9 +17,7 @@ class WebSocketJSONStream<T> extends EventEmitter implements AsyncIterable<T> {
   protected async connectURL(url: string, token: string, initialMessage?: unknown): Promise<void> {
     if (this.ws) throw new Error('Watcher already connected');
     await new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(url, {
-        headers: { ...signalHeaders(), 'Authorization': `Bearer ${token}` },
-      });
+      const ws = new WebSocket(url, { headers: authHeaders(token) });
       this.ws = ws;
       let connected = false;
       ws.addEventListener('open', () => {

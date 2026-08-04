@@ -3,7 +3,7 @@
  */
 
 import { Sprite } from './sprite.js';
-import { signalHeaders } from './client-signals.js';
+import { authHeaders } from './client-signals.js';
 import { parseAPIError } from './types.js';
 import type {
   ClientOptions,
@@ -142,10 +142,7 @@ export class SpritesClient {
 
     const response = await this.fetch(`${this.baseURL}/v1/sprites`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(this.token, { 'Content-Type': 'application/json' }),
       body: JSON.stringify(toAPIRequest(request)),
       signal: AbortSignal.timeout(120000), // 2 minute timeout for creation
     });
@@ -168,9 +165,7 @@ export class SpritesClient {
   async getSprite(name: string): Promise<Sprite> {
     const response = await this.fetch(`${this.baseURL}/v1/sprites/${encodeURIComponent(name)}`, {
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-      },
+      headers: authHeaders(this.token),
       signal: AbortSignal.timeout(this.timeout),
     });
 
@@ -200,9 +195,7 @@ export class SpritesClient {
     const url = `${this.baseURL}/v1/sprites${query ? `?${query}` : ''}`;
     const response = await this.fetch(url, {
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-      },
+      headers: authHeaders(this.token),
       signal: AbortSignal.timeout(this.timeout),
     });
 
@@ -236,10 +229,7 @@ export class SpritesClient {
     const query = params.toString();
     const response = await this.fetch(`${this.baseURL}/v1/sprites${query ? `?${query}` : ''}`, {
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Accept': 'application/x-ndjson',
-      },
+      headers: authHeaders(this.token, { 'Accept': 'application/x-ndjson' }),
     });
     if (!response.ok) {
       const body = await response.text();
@@ -280,9 +270,7 @@ export class SpritesClient {
   async deleteSprite(name: string): Promise<void> {
     const response = await this.fetch(`${this.baseURL}/v1/sprites/${encodeURIComponent(name)}`, {
       method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-      },
+      headers: authHeaders(this.token),
       signal: AbortSignal.timeout(this.timeout),
     });
 
@@ -301,9 +289,7 @@ export class SpritesClient {
   async upgradeSprite(name: string): Promise<void> {
     const response = await this.fetch(`${this.baseURL}/v1/sprites/${encodeURIComponent(name)}/upgrade`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-      },
+      headers: authHeaders(this.token),
       signal: AbortSignal.timeout(60000),
     });
 
@@ -322,7 +308,7 @@ export class SpritesClient {
       `${this.baseURL}/v1/sprites/${encodeURIComponent(name)}/restart`,
       {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${this.token}` },
+        headers: authHeaders(this.token),
         signal: AbortSignal.timeout(60000),
       }
     );
@@ -340,7 +326,7 @@ export class SpritesClient {
       `${this.baseURL}/v1/sprites/${encodeURIComponent(name)}/check`,
       {
         method: 'GET',
-        headers: { 'Authorization': `Bearer ${this.token}` },
+        headers: authHeaders(this.token),
         signal: AbortSignal.timeout(this.timeout),
       }
     );
@@ -372,10 +358,7 @@ export class SpritesClient {
 
     const response = await this.fetch(`${this.baseURL}/v1/sprites/${encodeURIComponent(name)}`, {
       method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(this.token, { 'Content-Type': 'application/json' }),
       body: JSON.stringify(toAPIRequest(options)),
       signal: AbortSignal.timeout(this.timeout),
     });
@@ -444,13 +427,7 @@ export class SpritesClient {
    */
   private async fetch(url: string, init?: RequestInit): Promise<Response> {
     try {
-      return await fetch(url, {
-        ...init,
-        headers: {
-          ...signalHeaders(),
-          ...((init?.headers ?? {}) as Record<string, string>),
-        },
-      });
+      return await fetch(url, init);
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`Network error: ${error.message}`);

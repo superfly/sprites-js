@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import { resetCachedForTest } from '@fly/client-signals';
-import { resetSignalHeadersForTest, signalHeaders } from './client-signals.js';
+import { authHeaders, resetSignalHeadersForTest, signalHeaders } from './client-signals.js';
 
 const originalSignalsSetting = process.env.SPRITES_CLIENT_SIGNALS;
 const originalInvokedBy = process.env.FLY_INVOKED_BY;
@@ -60,4 +60,29 @@ describe('client signals', () => {
       assert.match(headers['User-Agent'], /^sprites-js\/[^ ]+$/);
     });
   }
+});
+
+describe('authHeaders', () => {
+  it('combines signals, bearer auth, and request-specific extras', () => {
+    delete process.env.SPRITES_CLIENT_SIGNALS;
+    resetCachedForTest();
+    resetSignalHeadersForTest();
+
+    const headers = authHeaders('secret', { 'Content-Type': 'application/json' });
+    assert.equal(headers.Authorization, 'Bearer secret');
+    assert.equal(headers['Content-Type'], 'application/json');
+    assert.match(headers['User-Agent'], /^sprites-js\//);
+    assert.match(headers['Fly-Client-Interactive'], /^(true|false)$/);
+    assert.match(headers['Fly-Client-Parent'], /^(node|python|shell|other)$/);
+  });
+
+  it('still authenticates when signals are disabled', () => {
+    process.env.SPRITES_CLIENT_SIGNALS = '0';
+    resetCachedForTest();
+    resetSignalHeadersForTest();
+
+    const headers = authHeaders('secret');
+    assert.equal(headers.Authorization, 'Bearer secret');
+    assert.deepEqual(Object.keys(headers).sort(), ['Authorization', 'User-Agent']);
+  });
 });

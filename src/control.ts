@@ -3,7 +3,7 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { signalHeaders } from './client-signals.js';
+import { authHeaders } from './client-signals.js';
 import type { Sprite } from './sprite.js';
 import { StreamID } from './types.js';
 
@@ -253,10 +253,7 @@ export class ControlConnection extends EventEmitter {
     return new Promise((resolve, reject) => {
       try {
         this.ws = new WebSocket(url, {
-          headers: {
-            ...signalHeaders(),
-            'Authorization': `Bearer ${this.sprite.client.token}`,
-          },
+          headers: authHeaders(this.sprite.client.token),
         });
 
         this.ws.binaryType = 'arraybuffer';

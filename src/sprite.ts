@@ -3,7 +3,7 @@
  */
 
 import { SpritesClient } from './client.js';
-import { signalHeaders } from './client-signals.js';
+import { authHeaders } from './client-signals.js';
 import { SpriteCommand, SessionKillStream, spawn, exec, execFile, execFileHTTP, killSession } from './exec.js';
 import { CheckpointStream, RestoreStream } from './checkpoint.js';
 import { ProxySession, proxyPort, proxyPorts } from './proxy.js';
@@ -137,10 +137,7 @@ export class Sprite {
   async listSessions(): Promise<Session[]> {
     const response = await fetch(`${this.baseURL()}/exec`, {
       method: 'GET',
-      headers: {
-        ...signalHeaders(),
-        'Authorization': `Bearer ${this.client.token}`,
-      },
+      headers: authHeaders(this.client.token),
       signal: AbortSignal.timeout(30000),
     });
 
@@ -227,11 +224,7 @@ export class Sprite {
     if (comment) body.comment = comment;
     const response = await fetch(`${this.baseURL()}/checkpoint`, {
       method: 'POST',
-      headers: {
-        ...signalHeaders(),
-        'Authorization': `Bearer ${this.client.token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(this.client.token, { 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
       // No timeout: checkpoint streams can be long-running
     });
@@ -253,10 +246,7 @@ export class Sprite {
     }
     const response = await fetch(url, {
       method: 'GET',
-      headers: {
-        ...signalHeaders(),
-        'Authorization': `Bearer ${this.client.token}`,
-      },
+      headers: authHeaders(this.client.token),
       signal: AbortSignal.timeout(30000),
     });
     if (!response.ok) {
@@ -281,10 +271,7 @@ export class Sprite {
   async getCheckpoint(id: string): Promise<Checkpoint> {
     const response = await fetch(`${this.baseURL()}/checkpoints/${encodeURIComponent(id)}`, {
       method: 'GET',
-      headers: {
-        ...signalHeaders(),
-        'Authorization': `Bearer ${this.client.token}`,
-      },
+      headers: authHeaders(this.client.token),
       signal: AbortSignal.timeout(30000),
     });
     if (response.status === 404) {
@@ -313,10 +300,7 @@ export class Sprite {
   async restoreCheckpoint(id: string): Promise<RestoreStream> {
     const response = await fetch(`${this.baseURL()}/checkpoints/${encodeURIComponent(id)}/restore`, {
       method: 'POST',
-      headers: {
-        ...signalHeaders(),
-        'Authorization': `Bearer ${this.client.token}`,
-      },
+      headers: authHeaders(this.client.token),
       // No timeout: restore streams can be long-running
     });
     if (!response.ok) {

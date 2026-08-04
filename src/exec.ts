@@ -4,7 +4,7 @@
 
 import { EventEmitter } from 'node:events';
 import { Readable, Writable, PassThrough } from 'node:stream';
-import { signalHeaders } from './client-signals.js';
+import { authHeaders } from './client-signals.js';
 import { WSCommand } from './websocket.js';
 import type { Sprite } from './sprite.js';
 import type { SpawnOptions, ExecOptions, ExecResult } from './types.js';
@@ -58,10 +58,7 @@ export class SpriteCommand extends EventEmitter {
     // Create WebSocket command
     this.wsCmd = new WSCommand(
       url,
-      {
-        ...signalHeaders(),
-        'Authorization': `Bearer ${this.sprite.client.token}`,
-      },
+      authHeaders(this.sprite.client.token),
       options.tty || false
     );
 
@@ -393,11 +390,9 @@ export async function execFileHTTP(
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      ...signalHeaders(),
-      'Authorization': `Bearer ${sprite.client.token}`,
+    headers: authHeaders(sprite.client.token, {
       'Content-Type': 'application/octet-stream',
-    },
+    }),
     body: options.input === undefined ? undefined :
       typeof options.input === 'string' ? Buffer.from(options.input) : options.input,
     signal: requestSignal,
@@ -476,7 +471,7 @@ export async function killSession(
   if (timeout) url.searchParams.set('timeout', timeout);
   const response = await fetch(url, {
     method: 'POST',
-    headers: { ...signalHeaders(), 'Authorization': `Bearer ${sprite.client.token}` },
+    headers: authHeaders(sprite.client.token),
   });
   if (!response.ok) {
     const body = await response.text();
