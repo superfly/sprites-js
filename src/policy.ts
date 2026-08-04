@@ -2,6 +2,7 @@
  * Network policy API handlers
  */
 
+import { signalHeaders } from './client-signals.js';
 import type { NetworkPolicy, PrivilegesPolicy, ResourcesPolicy } from './types.js';
 
 interface ClientInfo {
@@ -21,6 +22,7 @@ export async function getNetworkPolicy(
     {
       method: 'GET',
       headers: {
+        ...signalHeaders(),
         Authorization: `Bearer ${client.token}`,
       },
       signal: AbortSignal.timeout(30000),
@@ -50,6 +52,7 @@ export async function updateNetworkPolicy(
     {
       method: 'POST',
       headers: {
+        ...signalHeaders(),
         Authorization: `Bearer ${client.token}`,
         'Content-Type': 'application/json',
       },
@@ -83,6 +86,7 @@ async function policyRequest<T>(
     {
       method,
       headers: {
+        ...signalHeaders(),
         Authorization: `Bearer ${client.token}`,
         ...(body !== undefined && { 'Content-Type': 'application/json' }),
       },

@@ -3,6 +3,7 @@
  */
 
 import { SpritesClient } from './client.js';
+import { signalHeaders } from './client-signals.js';
 import { SpriteCommand, SessionKillStream, spawn, exec, execFile, execFileHTTP, killSession } from './exec.js';
 import { CheckpointStream, RestoreStream } from './checkpoint.js';
 import { ProxySession, proxyPort, proxyPorts } from './proxy.js';
@@ -137,6 +138,7 @@ export class Sprite {
     const response = await fetch(`${this.baseURL()}/exec`, {
       method: 'GET',
       headers: {
+        ...signalHeaders(),
         'Authorization': `Bearer ${this.client.token}`,
       },
       signal: AbortSignal.timeout(30000),
@@ -226,6 +228,7 @@ export class Sprite {
     const response = await fetch(`${this.baseURL()}/checkpoint`, {
       method: 'POST',
       headers: {
+        ...signalHeaders(),
         'Authorization': `Bearer ${this.client.token}`,
         'Content-Type': 'application/json',
       },
@@ -251,6 +254,7 @@ export class Sprite {
     const response = await fetch(url, {
       method: 'GET',
       headers: {
+        ...signalHeaders(),
         'Authorization': `Bearer ${this.client.token}`,
       },
       signal: AbortSignal.timeout(30000),
@@ -278,6 +282,7 @@ export class Sprite {
     const response = await fetch(`${this.baseURL()}/checkpoints/${encodeURIComponent(id)}`, {
       method: 'GET',
       headers: {
+        ...signalHeaders(),
         'Authorization': `Bearer ${this.client.token}`,
       },
       signal: AbortSignal.timeout(30000),
@@ -309,6 +314,7 @@ export class Sprite {
     const response = await fetch(`${this.baseURL()}/checkpoints/${encodeURIComponent(id)}/restore`, {
       method: 'POST',
       headers: {
+        ...signalHeaders(),
         'Authorization': `Bearer ${this.client.token}`,
       },
       // No timeout: restore streams can be long-running

@@ -3,6 +3,7 @@
  */
 
 import { Sprite } from './sprite.js';
+import { signalHeaders } from './client-signals.js';
 import { parseAPIError } from './types.js';
 import type {
   ClientOptions,
@@ -410,6 +411,8 @@ export class SpritesClient {
       body.invite_code = inviteCode;
     }
 
+    // Keep attribution off the credential-minting request. Client signals are
+    // attached only after a caller has a Sprites access token.
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -441,7 +444,13 @@ export class SpritesClient {
    */
   private async fetch(url: string, init?: RequestInit): Promise<Response> {
     try {
-      return await fetch(url, init);
+      return await fetch(url, {
+        ...init,
+        headers: {
+          ...signalHeaders(),
+          ...((init?.headers ?? {}) as Record<string, string>),
+        },
+      });
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`Network error: ${error.message}`);

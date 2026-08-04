@@ -50,6 +50,12 @@
     "README.md",
     "LICENSE"
   ],
+  "dependencies": {
+    "@superfly/client-signals": "file:vendor/client-signals"
+  },
+  "bundledDependencies": [
+    "@superfly/client-signals"
+  ],
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.6.0"

@@ -4,6 +4,7 @@
  */
 
 import { SpritesClient } from './client.js';
+import { signalHeaders } from './client-signals.js';
 import { FilesystemError } from './types.js';
 import { FilesystemWatcher } from './watch.js';
 import type {
@@ -164,6 +165,7 @@ export class SpriteFilesystem {
    */
   private getHeaders(): Record<string, string> {
     return {
+      ...signalHeaders(),
       'Authorization': `Bearer ${this.client.token}`,
     };
   }

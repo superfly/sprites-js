@@ -4,6 +4,7 @@
 
 import { EventEmitter } from 'node:events';
 import { createServer, Socket, Server } from 'node:net';
+import { signalHeaders } from './client-signals.js';
 import type { PortMapping, ProxyInitMessage, ProxyResponseMessage } from './types.js';
 
 /**
@@ -65,6 +66,7 @@ export class ProxySession extends EventEmitter {
     try {
       const ws = new WebSocket(wsURL, {
         headers: {
+          ...signalHeaders(),
           'Authorization': `Bearer ${this.client.token}`,
         },
       });

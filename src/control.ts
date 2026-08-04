@@ -3,6 +3,7 @@
  */
 
 import { EventEmitter } from 'node:events';
+import { signalHeaders } from './client-signals.js';
 import type { Sprite } from './sprite.js';
 import { StreamID } from './types.js';
 
@@ -253,6 +254,7 @@ export class ControlConnection extends EventEmitter {
       try {
         this.ws = new WebSocket(url, {
           headers: {
+            ...signalHeaders(),
             'Authorization': `Bearer ${this.sprite.client.token}`,
           },
         });

@@ -2,6 +2,7 @@
  * Services API handlers
  */
 
+import { signalHeaders } from './client-signals.js';
 import type {
   ServiceWithState,
   ServiceRequest,
@@ -184,6 +185,7 @@ export async function listServices(
     {
       method: 'GET',
       headers: {
+        ...signalHeaders(),
         Authorization: `Bearer ${client.token}`,
       },
       signal: AbortSignal.timeout(30000),
@@ -215,6 +217,7 @@ export async function getService(
     {
       method: 'GET',
       headers: {
+        ...signalHeaders(),
         Authorization: `Bearer ${client.token}`,
       },
       signal: AbortSignal.timeout(30000),
@@ -255,6 +258,7 @@ export async function createService(
   const response = await fetch(url, {
     method: 'PUT',
     headers: {
+      ...signalHeaders(),
       Authorization: `Bearer ${client.token}`,
       'Content-Type': 'application/json',
     },
@@ -289,6 +293,7 @@ export async function deleteService(
     {
       method: 'DELETE',
       headers: {
+        ...signalHeaders(),
         Authorization: `Bearer ${client.token}`,
       },
       signal: AbortSignal.timeout(30000),
@@ -331,6 +336,7 @@ export async function startService(
   const response = await fetch(url, {
     method: 'POST',
     headers: {
+      ...signalHeaders(),
       Authorization: `Bearer ${client.token}`,
     },
   });
@@ -368,6 +374,7 @@ export async function stopService(
   const response = await fetch(url, {
     method: 'POST',
     headers: {
+      ...signalHeaders(),
       Authorization: `Bearer ${client.token}`,
     },
   });
@@ -403,7 +410,7 @@ export async function restartService(
   if (duration) url.searchParams.set('duration', duration);
   const response = await fetch(url, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${client.token}` },
+    headers: { ...signalHeaders(), Authorization: `Bearer ${client.token}` },
   });
   if (!response.ok) {
     const body = await response.text();
@@ -424,7 +431,7 @@ export async function getServiceLogs(
   if (options.duration) url.searchParams.set('duration', options.duration);
   const response = await fetch(url, {
     method: 'GET',
-    headers: { Authorization: `Bearer ${client.token}` },
+    headers: { ...signalHeaders(), Authorization: `Bearer ${client.token}` },
   });
   if (!response.ok) {
     const body = await response.text();
@@ -447,6 +454,7 @@ export async function signalService(
     {
       method: 'POST',
       headers: {
+        ...signalHeaders(),
         Authorization: `Bearer ${client.token}`,
         'Content-Type': 'application/json',
       },
