@@ -182,6 +182,10 @@ const { stdout, stderr } = await sprite.exec('ls -la');
 console.log(stdout);
 ```
 
+WebSocket commands may remain quiet for extended periods; the SDK waits for the
+server to report command completion instead of treating a lack of output as a
+connection failure.
+
 ### TTY Mode
 
 ```typescript
