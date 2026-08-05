@@ -1,6 +1,6 @@
 {
   "name": "@fly/client-signals",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Privacy-safe client signals for CLI HTTP traffic.",
   "type": "module",
   "main": "./src/index.js",

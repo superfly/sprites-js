@@ -30,6 +30,11 @@ export const KNOWN_MARKERS = [
   { agent: "copilot", env: "COPILOT_MODEL", kind: "presence" },
   { agent: "copilot", env: "COPILOT_ALLOW_ALL", kind: "presence" },
   { agent: "kilo-code", env: "KILO_PLATFORM", kind: "exactValue", values: ["vscode"] },
+  // GROK_AGENT is dual-use: Grok Build sets it to "1" in the environment of the
+  // subprocesses its tools spawn, but it is also a documented user-facing
+  // setting whose value is a custom agent name or definition path. Matching the
+  // exact value "1" keeps this to the tool-set form.
+  { agent: "grok", env: "GROK_AGENT", kind: "exactValue", values: ["1"] },
 ];
 
 let cachedSignals;

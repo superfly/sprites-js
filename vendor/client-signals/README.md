@@ -1,19 +1,20 @@
 # Vendored client-signals
 
-This is the JavaScript package from
-[superfly/client-signals](https://github.com/superfly/client-signals) at
-release `v0.4.3`.
+This is the JavaScript implementation from
+[superfly/client-signals](https://github.com/superfly/client-signals) release
+[`v0.4.4`](https://github.com/superfly/client-signals/releases/tag/v0.4.4).
 
-It is bundled with `@fly/sprites` because `@fly/client-signals` is not yet
-published to npm. The runtime source is unmodified. This vendored package adds
-TypeScript declarations and corrects the package license metadata to match the
-upstream Apache-2.0 repository license.
+The JavaScript implementation is not published to npm. Vendoring it inside
+`@fly/sprites` is the supported distribution model. The runtime source and
+TypeScript declarations are unmodified; the package metadata is adapted for
+bundling and carries the upstream Apache-2.0 license.
 
 `@fly/sprites` ships this directory two ways: npm resolves the dependency from
 the bundled `node_modules` copy, and the `files` entry keeps `vendor/` in the
 tarball so the `file:vendor/client-signals` specifier still resolves under
 package managers that handle `bundledDependencies` differently.
 
-Once `@fly/client-signals` is on npm, delete this directory and replace the
-file dependency, the `bundledDependencies` entry, and the `files` entry with a
-normal registry version range.
+To update the snapshot, copy the runtime and declarations from a reviewed
+upstream release, update the release link above, and keep the local dependency,
+`bundledDependencies`, and `files` entries in sync. Then run the full test
+suite and verify that the packed `@fly/sprites` tarball installs offline.
