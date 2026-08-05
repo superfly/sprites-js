@@ -2,6 +2,7 @@
  * Services API handlers
  */
 
+import { authHeaders } from './client-signals.js';
 import type {
   ServiceWithState,
   ServiceRequest,
@@ -183,9 +184,7 @@ export async function listServices(
     servicesURL(client, spriteName),
     {
       method: 'GET',
-      headers: {
-        Authorization: `Bearer ${client.token}`,
-      },
+      headers: authHeaders(client.token),
       signal: AbortSignal.timeout(30000),
     }
   );
@@ -214,9 +213,7 @@ export async function getService(
     servicesURL(client, spriteName, `/${encodeURIComponent(serviceName)}`),
     {
       method: 'GET',
-      headers: {
-        Authorization: `Bearer ${client.token}`,
-      },
+      headers: authHeaders(client.token),
       signal: AbortSignal.timeout(30000),
     }
   );
@@ -254,10 +251,7 @@ export async function createService(
 
   const response = await fetch(url, {
     method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${client.token}`,
-      'Content-Type': 'application/json',
-    },
+    headers: authHeaders(client.token, { 'Content-Type': 'application/json' }),
     body: JSON.stringify(serviceRequestToAPI(config)),
   });
 
@@ -288,9 +282,7 @@ export async function deleteService(
     servicesURL(client, spriteName, `/${encodeURIComponent(serviceName)}`),
     {
       method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${client.token}`,
-      },
+      headers: authHeaders(client.token),
       signal: AbortSignal.timeout(30000),
     }
   );
@@ -330,9 +322,7 @@ export async function startService(
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${client.token}`,
-    },
+    headers: authHeaders(client.token),
   });
 
   if (response.status === 404) {
@@ -367,9 +357,7 @@ export async function stopService(
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${client.token}`,
-    },
+    headers: authHeaders(client.token),
   });
 
   if (response.status === 404) {
@@ -403,7 +391,7 @@ export async function restartService(
   if (duration) url.searchParams.set('duration', duration);
   const response = await fetch(url, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${client.token}` },
+    headers: authHeaders(client.token),
   });
   if (!response.ok) {
     const body = await response.text();
@@ -424,7 +412,7 @@ export async function getServiceLogs(
   if (options.duration) url.searchParams.set('duration', options.duration);
   const response = await fetch(url, {
     method: 'GET',
-    headers: { Authorization: `Bearer ${client.token}` },
+    headers: authHeaders(client.token),
   });
   if (!response.ok) {
     const body = await response.text();
@@ -446,10 +434,7 @@ export async function signalService(
     servicesURL(client, spriteName, '/signal'),
     {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${client.token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(client.token, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({ name: serviceName, signal }),
       signal: AbortSignal.timeout(30000),
     }

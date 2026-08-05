@@ -246,6 +246,20 @@ try {
 }
 ```
 
+### Usage attribution
+
+The SDK adds privacy-safe client signals to Sprites API requests and WebSocket
+handshakes. These include coarse process context in `Fly-Client-*` headers and
+the SDK version in `User-Agent`; they do not include command arguments or
+environment values.
+
+Set `SPRITES_CLIENT_SIGNALS=0` to disable client-signal detection and headers.
+The SDK version remains in `User-Agent`. The values `off`, `false`, `no`, and
+`disabled` are also accepted.
+
+Signals are detected once per process, on the first API call, so set this
+before the first request. Changing it afterwards has no effect.
+
 ### Sprite Management
 
 ```typescript

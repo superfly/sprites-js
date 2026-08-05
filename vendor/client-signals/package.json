@@ -1,0 +1,23 @@
+{
+  "name": "@fly/client-signals",
+  "version": "0.4.4",
+  "description": "Privacy-safe client signals for CLI HTTP traffic.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "Apache-2.0"
+}

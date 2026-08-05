@@ -104,6 +104,11 @@ describe('SpritesClient public interface', () => {
       wait_for_capacity: true,
       runtime: 'dev',
     });
+    const headers = calls[0].init?.headers as Record<string, string>;
+    assert.match(headers['User-Agent'], /^sprites-js\//);
+    assert.match(headers['Fly-Client-Interactive'], /^(true|false)$/);
+    assert.match(headers['Fly-Client-Parent'], /^(node|python|shell|other)$/);
+    assert.equal(headers.Authorization, 'Bearer token');
     assert.equal(sprite.config?.ramMB, 4096);
     assert.equal(sprite.organizationName, 'test-org');
     assert.equal(sprite.urlSettings?.privateAccess, 'admins');
@@ -209,6 +214,8 @@ describe('SpritesClient public interface', () => {
     assert.deepEqual(JSON.parse(calls[0].init?.body as string), {
       description: 'Sprite SDK Token', invite_code: 'invite',
     });
+    const headers = calls[0].init?.headers as Record<string, string>;
+    assert.equal(Object.keys(headers).some(name => name.startsWith('Fly-Client-')), false);
   });
 
   it('surfaces structured API and network errors', async () => {

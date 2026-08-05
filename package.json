@@ -48,7 +48,14 @@
     "dist/**/*.d.ts.map",
     "!dist/**/*.test.*",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "vendor/client-signals"
+  ],
+  "dependencies": {
+    "@fly/client-signals": "file:vendor/client-signals"
+  },
+  "bundledDependencies": [
+    "@fly/client-signals"
   ],
   "devDependencies": {
     "@types/node": "^24.0.0",

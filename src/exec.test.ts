@@ -5,6 +5,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { SpritesClient } from './client.js';
+import { SpriteCommand } from './exec.js';
 import {
   ExecError,
   APIError,
@@ -14,6 +15,17 @@ import {
 } from './types.js';
 
 describe('WebSocket URL Building', () => {
+  it('adds client signals to command WebSocket handshakes', () => {
+    const client = new SpritesClient('test-token', { baseURL: 'https://example.test' });
+    const command = new SpriteCommand(client.sprite('my-sprite'), 'echo', ['hello']);
+    const headers = (command as any).wsCmd.headers as Record<string, string>;
+
+    assert.match(headers['User-Agent'], /^sprites-js\//);
+    assert.match(headers['Fly-Client-Interactive'], /^(true|false)$/);
+    assert.match(headers['Fly-Client-Parent'], /^(node|python|shell|other)$/);
+    assert.equal(headers.Authorization, 'Bearer test-token');
+  });
+
   it('should build correct WebSocket URL for basic command', () => {
     const client = new SpritesClient('test-token', { baseURL: 'http://localhost:8080' });
     const sprite = client.sprite('my-sprite');
@@ -364,4 +376,3 @@ describe('parseAPIError', () => {
     assert.strictEqual(err.isConcurrentLimitExceeded(), true);
   });
 });
-
