@@ -61,11 +61,14 @@ describe('SpritesClient public interface', () => {
     const settings: URLSettings = { auth: 'future-api-auth-mode' };
     // @ts-expect-error HTTP exec cannot create detachable sessions.
     const unsupported: HTTPExecOptions = { detachable: true };
+    // @ts-expect-error HTTP and WebSocket exec both use the Node-compatible timeout option.
+    const unsupportedTimeoutName: HTTPExecOptions = { timeoutMs: 100 };
 
     assert.equal(list.sprites[0].labels, undefined);
     assert.equal(list.running, undefined);
     assert.equal(settings.auth, 'future-api-auth-mode');
     void unsupported;
+    void unsupportedTimeoutName;
   });
 
   it('constructs handles and preserves client options', () => {

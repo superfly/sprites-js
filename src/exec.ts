@@ -24,6 +24,13 @@ export class SessionKillStream extends NDJSONStream<SessionKillEvent> {
   }
 }
 
+class ControlConnectionUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super('Control connection unavailable', { cause });
+    this.name = 'ControlConnectionUnavailableError';
+  }
+}
+
 /**
  * Represents a command running on a sprite
  * Mirrors the Node.js ChildProcess API
@@ -227,6 +234,13 @@ export class SpriteCommand extends EventEmitter {
   }
 
   /**
+   * Close the command's WebSocket connection.
+   */
+  close(): void {
+    this.wsCmd.close();
+  }
+
+  /**
    * Send a signal to the remote process
    */
   signal(sig: string): void {
@@ -292,12 +306,24 @@ export async function execFile(
   args: string[] = [],
   options: ExecOptions = {}
 ): Promise<ExecResult> {
+  validateExecCancellationOptions(options);
+  if (options.signal?.aborted) {
+    throw abortError();
+  }
+
   // Use control mode if enabled and not attaching to a session
   if (!options.sessionId && sprite.useControlMode()) {
     try {
       return await execFileViaControl(sprite, file, args, options);
-    } catch {
-      // Control connection failed (server may not support it), fall back to regular WebSocket
+    } catch (error) {
+      if (!(error instanceof ControlConnectionUnavailableError)) {
+        throw error;
+      }
+      if (options.signal?.aborted) {
+        throw abortError();
+      }
+      // The server may not support control mode. Fall back only when the
+      // control connection itself could not be established.
     }
   }
 
@@ -311,26 +337,35 @@ export async function execFile(
     const stderrChunks: Buffer[] = [];
     let stdoutLength = 0;
     let stderrLength = 0;
+    let removeCancellation = () => {};
+
+    const settler = createExecSettler(resolve, reject, () => {
+      removeCancellation();
+      cmd.close();
+    });
 
     cmd.stdout.on('data', (chunk: Buffer) => {
+      if (settler.isSettled()) return;
       stdoutChunks.push(chunk);
       stdoutLength += chunk.length;
       if (stdoutLength > maxBuffer) {
         cmd.kill();
-        reject(new Error(`stdout maxBuffer exceeded`));
+        settler.reject(new Error(`stdout maxBuffer exceeded`));
       }
     });
 
     cmd.stderr.on('data', (chunk: Buffer) => {
+      if (settler.isSettled()) return;
       stderrChunks.push(chunk);
       stderrLength += chunk.length;
       if (stderrLength > maxBuffer) {
         cmd.kill();
-        reject(new Error(`stderr maxBuffer exceeded`));
+        settler.reject(new Error(`stderr maxBuffer exceeded`));
       }
     });
 
     cmd.on('exit', (code: number) => {
+      if (settler.isSettled()) return;
       const stdoutBuffer = Buffer.concat(stdoutChunks);
       const stderrBuffer = Buffer.concat(stderrChunks);
 
@@ -342,17 +377,26 @@ export async function execFile(
 
       if (code !== 0) {
         const error = new ExecError(`Command failed with exit code ${code}`, result);
-        reject(error);
+        settler.reject(error);
       } else {
-        resolve(result);
+        settler.resolve(result);
       }
     });
 
     cmd.on('error', (error: Error) => {
-      reject(error);
+      settler.reject(error);
     });
 
-    cmd.start().catch(reject);
+    const cancellation = createExecCancellation(options, () => {
+      // signal() is a no-op while connecting; close() in the settler cleanup
+      // still disconnects the socket so the server can reap the process.
+      cmd.kill();
+    }, settler.reject);
+    removeCancellation = cancellation.cleanup;
+    cancellation.start();
+    if (!settler.isSettled()) {
+      cmd.start().catch(settler.reject);
+    }
   });
 }
 
@@ -498,7 +542,12 @@ async function execFileViaControl(
   const maxBuffer = options.maxBuffer || 10 * 1024 * 1024; // 10MB default
 
   // Get a control connection from the pool
-  const cc = await sprite.getControlConnection();
+  let cc;
+  try {
+    cc = await sprite.getControlConnection();
+  } catch (error) {
+    throw new ControlConnectionUnavailableError(error);
+  }
 
   // Build operation options
   const opOptions = {
@@ -520,34 +569,71 @@ async function execFileViaControl(
       const stderrChunks: Buffer[] = [];
       let stdoutLength = 0;
       let stderrLength = 0;
+      let removeCancellation = () => {};
+
+      const settler = createExecSettler(resolve, reject, () => {
+        removeCancellation();
+        op.close();
+      });
+
+      const cancelControlOp = (signal: string) => {
+        try {
+          op.signal(signal);
+        } catch {
+          // Closing the control connection below is the cancellation fallback.
+        } finally {
+          // Do not return a connection to the pool while the server may still
+          // be completing its canceled operation. A later exec will establish
+          // a fresh control connection.
+          cc.close();
+        }
+      };
 
       op.on('stdout', (data: Buffer) => {
+        if (settler.isSettled()) return;
         stdoutChunks.push(data);
         stdoutLength += data.length;
         if (stdoutLength > maxBuffer) {
-          op.signal('KILL');
-          reject(new Error(`stdout maxBuffer exceeded`));
+          cancelControlOp('KILL');
+          settler.reject(new Error(`stdout maxBuffer exceeded`));
         }
       });
 
       op.on('stderr', (data: Buffer) => {
+        if (settler.isSettled()) return;
         stderrChunks.push(data);
         stderrLength += data.length;
         if (stderrLength > maxBuffer) {
-          op.signal('KILL');
-          reject(new Error(`stderr maxBuffer exceeded`));
+          cancelControlOp('KILL');
+          settler.reject(new Error(`stderr maxBuffer exceeded`));
         }
       });
 
       op.on('error', (error: Error) => {
-        reject(error);
+        settler.reject(error);
       });
 
       // Send stdin EOF since we're not providing input
-      op.sendEOF();
+      try {
+        op.sendEOF();
+      } catch (error) {
+        cc.close();
+        settler.reject(error as Error);
+      }
+
+      if (!settler.isSettled()) {
+        const cancellation = createExecCancellation(
+          options,
+          () => cancelControlOp('TERM'),
+          settler.reject
+        );
+        removeCancellation = cancellation.cleanup;
+        cancellation.start();
+      }
 
       // Wait for completion
       op.wait().then((code) => {
+        if (settler.isSettled()) return;
         const stdoutBuffer = Buffer.concat(stdoutChunks);
         const stderrBuffer = Buffer.concat(stderrChunks);
 
@@ -559,14 +645,97 @@ async function execFileViaControl(
 
         if (code !== 0) {
           const error = new ExecError(`Command failed with exit code ${code}`, result);
-          reject(error);
+          settler.reject(error);
         } else {
-          resolve(result);
+          settler.resolve(result);
         }
-      }).catch(reject);
+      }).catch(settler.reject);
     });
   } finally {
     // Always release the connection back to the pool
     releaseControlConnection(sprite, cc);
   }
+}
+
+function validateExecCancellationOptions(options: ExecOptions): void {
+  if (
+    options.timeout !== undefined &&
+    (!Number.isFinite(options.timeout) || options.timeout < 0)
+  ) {
+    throw new TypeError('timeout must be a non-negative finite number');
+  }
+}
+
+function createExecSettler<T>(
+  resolve: (value: T) => void,
+  reject: (error: Error) => void,
+  cleanup: () => void
+): {
+  isSettled: () => boolean;
+  resolve: (value: T) => void;
+  reject: (error: Error) => void;
+} {
+  let settled = false;
+
+  const settle = (complete: () => void) => {
+    if (settled) return;
+    settled = true;
+    try {
+      cleanup();
+    } finally {
+      complete();
+    }
+  };
+
+  return {
+    isSettled: () => settled,
+    resolve: (value) => settle(() => resolve(value)),
+    reject: (error) => settle(() => reject(error)),
+  };
+}
+
+function createExecCancellation(
+  options: ExecOptions,
+  cancel: () => void,
+  reject: (error: Error) => void
+): { start: () => void; cleanup: () => void } {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  const cancelAndReject = (error: Error) => {
+    try {
+      cancel();
+    } catch {
+      // Preserve the requested abort/timeout error. Cleanup still runs when
+      // reject() settles the operation.
+    } finally {
+      reject(error);
+    }
+  };
+  const onAbort = () => cancelAndReject(abortError());
+
+  return {
+    start: () => {
+      options.signal?.addEventListener('abort', onAbort, { once: true });
+      if (options.timeout !== undefined && options.timeout > 0) {
+        timeout = setTimeout(
+          () => cancelAndReject(new Error(`Command timed out after ${options.timeout} ms`)),
+          options.timeout
+        );
+      }
+
+      if (options.signal?.aborted) {
+        onAbort();
+      }
+    },
+    cleanup: () => {
+      if (timeout !== undefined) clearTimeout(timeout);
+      options.signal?.removeEventListener('abort', onAbort);
+    },
+  };
+}
+
+function abortError(): Error {
+  const error = new Error('Command execution was aborted');
+  error.name = 'AbortError';
+  return error;
 }

@@ -17,6 +17,7 @@ class MockWebSocket {
   static readonly CLOSING = 2;
   static readonly CLOSED = 3;
   static instances: MockWebSocket[] = [];
+  static failNextConnection: string | undefined;
 
   readonly url: string;
   readyState = MockWebSocket.CONNECTING;
@@ -27,7 +28,13 @@ class MockWebSocket {
   constructor(url: string | URL) {
     this.url = url.toString();
     MockWebSocket.instances.push(this);
+    const connectionError = MockWebSocket.failNextConnection;
+    MockWebSocket.failNextConnection = undefined;
     queueMicrotask(() => {
+      if (connectionError) {
+        this.dispatch('error', { message: connectionError });
+        return;
+      }
       this.readyState = MockWebSocket.OPEN;
       this.dispatch('open', {});
     });
@@ -60,6 +67,7 @@ class MockWebSocket {
 
 function installWebSocket(): void {
   MockWebSocket.instances = [];
+  MockWebSocket.failNextConnection = undefined;
   globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
 }
 
@@ -162,6 +170,186 @@ describe('SpriteCommand and Sprite execution interfaces', () => {
     ws.dispatch('message', { data: binary(StreamID.Stderr, ...Buffer.from('failed')) });
     ws.dispatch('message', { data: binary(StreamID.Exit, 2) });
     await assert.rejects(filePromise, (error: any) => error.exitCode === 2 && Buffer.isBuffer(error.stderr));
+  });
+
+  it('closes the exec WebSocket when execution fails', async () => {
+    installWebSocket();
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    const execution = sprite.execFile('command');
+    await new Promise(resolve => setImmediate(resolve));
+
+    const ws = MockWebSocket.instances[0];
+    ws.dispatch('error', { message: 'connection failed' });
+
+    await assert.rejects(execution, /connection failed/);
+    assert.equal(ws.readyState, MockWebSocket.CLOSED);
+  });
+
+  it('closes the exec WebSocket when maxBuffer is exceeded', async () => {
+    installWebSocket();
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    const execution = sprite.execFile('printf', [], { maxBuffer: 3 });
+    await new Promise(resolve => setImmediate(resolve));
+
+    const ws = MockWebSocket.instances[0];
+    ws.dispatch('message', { data: binary(StreamID.Stdout, ...Buffer.from('large')) });
+
+    await assert.rejects(execution, /stdout maxBuffer exceeded/);
+    assert.equal(ws.readyState, MockWebSocket.CLOSED);
+  });
+
+  it('closes the exec WebSocket when execution times out', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    installWebSocket();
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    const execution = sprite.execFile('sleep', ['120'], { timeout: 50 });
+    await new Promise(resolve => setImmediate(resolve));
+
+    const ws = MockWebSocket.instances[0];
+    t.mock.timers.tick(50);
+
+    await assert.rejects(execution, /timed out after 50 ms/);
+    assert.equal(ws.readyState, MockWebSocket.CLOSED);
+  });
+
+  it('closes a connecting exec WebSocket when execution is aborted', async () => {
+    installWebSocket();
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    const abort = new AbortController();
+    const execution = sprite.execFile('sleep', ['120'], { signal: abort.signal });
+
+    abort.abort();
+
+    await assert.rejects(execution, (error: any) => error.name === 'AbortError');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(MockWebSocket.instances[0].readyState, MockWebSocket.CLOSED);
+  });
+
+  it('ends streams and wait() when SpriteCommand.close() is called', async () => {
+    installWebSocket();
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    const command = new SpriteCommand(sprite, 'sleep', ['120']);
+    command.stdout.resume();
+    command.stderr.resume();
+    const stdoutEnded = new Promise(resolve => command.stdout.once('end', resolve));
+    const stderrEnded = new Promise(resolve => command.stderr.once('end', resolve));
+    await command.start();
+
+    command.close();
+
+    assert.equal(await command.wait(), -1);
+    await Promise.all([stdoutEnded, stderrEnded]);
+    assert.equal(MockWebSocket.instances[0].readyState, MockWebSocket.CLOSED);
+  });
+
+  it('validates exec timeout, treats zero as disabled, and removes abort listeners', async () => {
+    installWebSocket();
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    await assert.rejects(() => sprite.execFile('true', [], { timeout: -1 }), TypeError);
+    await assert.rejects(() => sprite.execFile('true', [], { timeout: Number.NaN }), TypeError);
+    assert.equal(MockWebSocket.instances.length, 0);
+
+    let removeCount = 0;
+    const listeners = new Set<unknown>();
+    const signal = {
+      aborted: false,
+      addEventListener: (_type: string, listener: unknown) => {
+        listeners.add(listener);
+      },
+      removeEventListener: (_type: string, listener: unknown) => {
+        removeCount++;
+        listeners.delete(listener);
+      },
+    } as unknown as AbortSignal;
+    const execution = sprite.execFile('true', [], { signal, timeout: 0 });
+    await new Promise(resolve => setImmediate(resolve));
+    const ws = MockWebSocket.instances[0];
+    ws.dispatch('message', { data: binary(StreamID.Exit, 0) });
+
+    assert.equal((await execution).exitCode, 0);
+    assert.equal(removeCount, 1);
+    assert.equal(listeners.size, 0);
+    assert.equal(ws.readyState, MockWebSocket.CLOSED);
+  });
+
+  it('does not retry an aborted control operation and uses control mode again', async () => {
+    installWebSocket();
+    const sprite = new SpritesClient('token', {
+      baseURL: 'https://example.test', controlMode: true,
+    }).sprite('demo');
+    const abort = new AbortController();
+    const execution = sprite.execFile('sleep', ['120'], { signal: abort.signal });
+    await new Promise(resolve => setImmediate(resolve));
+
+    abort.abort();
+
+    await assert.rejects(execution, (error: any) => error.name === 'AbortError');
+    assert.equal(MockWebSocket.instances.length, 1);
+    assert.match(MockWebSocket.instances[0].url, /\/control$/);
+    assert.equal(MockWebSocket.instances[0].readyState, MockWebSocket.CLOSED);
+
+    const nextExecution = sprite.execFile('echo', ['hi']);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(MockWebSocket.instances.length, 2);
+    const nextControl = MockWebSocket.instances[1];
+    assert.match(nextControl.url, /\/control$/);
+    nextControl.dispatch('message', {
+      data: binary(StreamID.Stdout, ...Buffer.from('hi\n')),
+    });
+    nextControl.dispatch('message', {
+      data: 'control:{"type":"op.complete","args":{"exitCode":0}}',
+    });
+    assert.deepEqual(await nextExecution, { stdout: 'hi\n', stderr: '', exitCode: 0 });
+  });
+
+  it('does not retry a timed-out control operation', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    installWebSocket();
+    const sprite = new SpritesClient('token', {
+      baseURL: 'https://example.test', controlMode: true,
+    }).sprite('demo');
+    const execution = sprite.execFile('sleep', ['120'], { timeout: 50 });
+    await new Promise(resolve => setImmediate(resolve));
+
+    t.mock.timers.tick(50);
+
+    await assert.rejects(execution, /timed out after 50 ms/);
+    assert.equal(MockWebSocket.instances.length, 1);
+    assert.match(MockWebSocket.instances[0].url, /\/control$/);
+    assert.equal(MockWebSocket.instances[0].readyState, MockWebSocket.CLOSED);
+  });
+
+  it('falls back only when the control connection cannot be established', async () => {
+    installWebSocket();
+    const sprite = new SpritesClient('token', {
+      baseURL: 'https://example.test', controlMode: true,
+    }).sprite('demo');
+    MockWebSocket.failNextConnection = 'control unsupported';
+
+    const execution = sprite.execFile('echo', ['fallback']);
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(MockWebSocket.instances.length, 2);
+    assert.match(MockWebSocket.instances[0].url, /\/control$/);
+    assert.match(MockWebSocket.instances[1].url, /\/exec\?/);
+    MockWebSocket.instances[1].dispatch('message', { data: binary(StreamID.Exit, 0) });
+    assert.equal((await execution).exitCode, 0);
+  });
+
+  it('does not fall back after a control operation has started', async () => {
+    installWebSocket();
+    const sprite = new SpritesClient('token', {
+      baseURL: 'https://example.test', controlMode: true,
+    }).sprite('demo');
+    const execution = sprite.execFile('false');
+    await new Promise(resolve => setImmediate(resolve));
+
+    MockWebSocket.instances[0].dispatch('message', {
+      data: 'control:{"type":"op.error","args":{"error":"failed"}}',
+    });
+
+    await assert.rejects(execution, /failed/);
+    assert.equal(MockWebSocket.instances.length, 1);
   });
 
   it('executes over HTTP and streams session-kill progress', async () => {
@@ -338,5 +526,23 @@ describe('control interfaces', () => {
     assert.ok(pooled instanceof ControlConnection);
     sprite.closeControlConnection();
     assert.equal(sprite.hasControlConnection(), false);
+  });
+
+  it('clears operation state when an OpConn is closed early', async () => {
+    installWebSocket();
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    const connection = new ControlConnection(sprite);
+    await connection.connect();
+
+    const first = await connection.startOp('exec', { cmd: ['sleep', '120'] });
+    first.close();
+    const second = await connection.startOp('exec', { cmd: ['echo', 'hi'] });
+
+    const waited = second.wait();
+    MockWebSocket.instances[0].dispatch('message', {
+      data: 'control:{"type":"op.complete","args":{"exitCode":0}}',
+    });
+    assert.equal(await waited, 0);
+    connection.close();
   });
 });

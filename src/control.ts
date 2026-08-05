@@ -162,6 +162,7 @@ export class OpConn extends EventEmitter {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.cc.clearOpConn(this);
     this.emit('close');
   }
 
@@ -229,7 +230,9 @@ export class ControlConnection extends EventEmitter {
   /**
    * Clear the operation connection (called by pool on release)
    */
-  clearOpConn(): void {
+  clearOpConn(opConn?: OpConn): void {
+    if (opConn && this.opConn !== opConn) return;
+    this.opActive = false;
     this.opConn = null;
   }
 
@@ -275,6 +278,7 @@ export class ControlConnection extends EventEmitter {
             this.emit('error', error);
           } else {
             // Pre-connection error: reject the connect() promise
+            this.close();
             reject(error);
           }
         });
@@ -333,10 +337,13 @@ export class ControlConnection extends EventEmitter {
         break;
 
       case TYPE_OP_ERROR:
-        if (this.opConn) {
-          const error = (msg.args?.error as string) ?? 'unknown error';
-          this.opConn.emit('error', new Error(error));
-          this.opConn.complete();
+        {
+          const opConn = this.opConn;
+          if (opConn) {
+            const error = (msg.args?.error as string) ?? 'unknown error';
+            opConn.emit('error', new Error(error));
+            opConn.complete();
+          }
         }
         this.opActive = false;
         this.opConn = null;
@@ -421,13 +428,16 @@ export class ControlConnection extends EventEmitter {
    * Close the control connection
    */
   close(): void {
+    this.closed = true;
     if (this.opConn) {
       this.opConn.close();
     }
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && (
+      this.ws.readyState === WebSocket.CONNECTING ||
+      this.ws.readyState === WebSocket.OPEN
+    )) {
       this.ws.close(1000, '');
     }
-    this.closed = true;
   }
 
   /**
@@ -468,6 +478,8 @@ export class ControlPool {
       throw new Error('Pool is closed');
     }
 
+    this.conns = this.conns.filter((cc) => !cc.isClosed());
+
     // Try to find an available connection
     for (const cc of this.conns) {
       if (!cc.isClosed() && !cc.isActive()) {
@@ -497,6 +509,15 @@ export class ControlPool {
   release(cc: ControlConnection): void {
     cc.setActive(false);
     cc.clearOpConn();
+
+    if (cc.isClosed()) {
+      this.conns = this.conns.filter((connection) => connection !== cc);
+      const waiter = this.waiters.shift();
+      if (waiter) {
+        this.acquire().then(waiter.resolve, waiter.reject);
+      }
+      return;
+    }
 
     // If there are waiters, give them this connection
     if (this.waiters.length > 0) {

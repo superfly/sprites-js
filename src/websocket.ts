@@ -19,6 +19,7 @@ export class WSCommand extends EventEmitter {
   private tty: boolean;
   private started: boolean = false;
   private done: boolean = false;
+  private closeRequested: boolean = false;
 
   /** Whether this is attaching to an existing session */
   isAttach: boolean = false;
@@ -61,6 +62,11 @@ export class WSCommand extends EventEmitter {
         this.ws.binaryType = 'arraybuffer';
 
         this.ws.addEventListener('open', async () => {
+          if (this.closeRequested) {
+            this.ws?.close(1000, '');
+            return;
+          }
+
           // When attaching to an existing session, wait for session_info to determine TTY mode
           if (this.isAttach) {
             try {
@@ -284,7 +290,17 @@ export class WSCommand extends EventEmitter {
    * Close the WebSocket connection
    */
   close(): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    this.closeRequested = true;
+
+    if (!this.done) {
+      this.done = true;
+      this.emit('exit', this.exitCode);
+    }
+
+    if (this.ws && (
+      this.ws.readyState === WebSocket.CONNECTING ||
+      this.ws.readyState === WebSocket.OPEN
+    )) {
       this.ws.close(1000, '');
     }
   }
