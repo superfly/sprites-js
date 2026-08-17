@@ -25,7 +25,7 @@ describe('checkpoint and restore streams', () => {
     });
 
     it(`${name} processes all messages and can be closed`, async () => {
-      const stream = new Stream(streamResponse(['{"type":"info","data":"one"}\n{"type":"info","data":"two"}\n']));
+      const stream = new Stream(streamResponse(['{"type":"info","data":"one"}\n{"type":"complete","data":"two"}\n']));
       const messages: string[] = [];
       await stream.processAll(message => { messages.push(message.data!); });
       assert.deepEqual(messages, ['one', 'two']);

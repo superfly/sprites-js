@@ -12,6 +12,8 @@ export class CheckpointStream {
   private decoder = new TextDecoder();
   private buffer = '';
   private done = false;
+  private sawTerminal = false;
+  private eofReached = false;
 
   constructor(response: Response) {
     if (!response.body) {
@@ -26,6 +28,7 @@ export class CheckpointStream {
    */
   async next(): Promise<StreamMessage | null> {
     if (this.done) {
+      this.assertNotTruncated();
       return null;
     }
 
@@ -42,7 +45,9 @@ export class CheckpointStream {
         }
 
         try {
-          return JSON.parse(line) as StreamMessage;
+          const msg = JSON.parse(line) as StreamMessage;
+          this.noteTerminal(msg);
+          return msg;
         } catch {
           // Skip malformed JSON lines
           continue;
@@ -58,18 +63,42 @@ export class CheckpointStream {
       const { value, done } = await this.reader.read();
       if (done) {
         this.done = true;
+        this.eofReached = true;
         // Process any remaining buffer content
         if (this.buffer.trim()) {
           try {
-            return JSON.parse(this.buffer.trim()) as StreamMessage;
+            const msg = JSON.parse(this.buffer.trim()) as StreamMessage;
+            this.buffer = '';
+            this.noteTerminal(msg);
+            return msg;
           } catch {
+            this.assertNotTruncated();
             return null;
           }
         }
+        this.assertNotTruncated();
         return null;
       }
 
       this.buffer += this.decoder.decode(value, { stream: true });
+    }
+  }
+
+  private noteTerminal(msg: StreamMessage): void {
+    if (msg.type === 'complete' || msg.type === 'error') {
+      this.sawTerminal = true;
+    }
+  }
+
+  // The server always ends the stream with a terminal 'complete' or 'error'
+  // event. EOF without one means the connection was dropped mid-operation
+  // (e.g. by a proxy), so the operation's outcome is unknown and must not be
+  // reported as success.
+  private assertNotTruncated(): void {
+    if (this.eofReached && !this.sawTerminal) {
+      throw new Error(
+        'Stream ended without a terminal "complete" or "error" event; the connection may have been dropped before the operation finished'
+      );
     }
   }
 
@@ -122,6 +151,8 @@ export class RestoreStream {
   private decoder = new TextDecoder();
   private buffer = '';
   private done = false;
+  private sawTerminal = false;
+  private eofReached = false;
 
   constructor(response: Response) {
     if (!response.body) {
@@ -136,6 +167,7 @@ export class RestoreStream {
    */
   async next(): Promise<StreamMessage | null> {
     if (this.done) {
+      this.assertNotTruncated();
       return null;
     }
 
@@ -152,7 +184,9 @@ export class RestoreStream {
         }
 
         try {
-          return JSON.parse(line) as StreamMessage;
+          const msg = JSON.parse(line) as StreamMessage;
+          this.noteTerminal(msg);
+          return msg;
         } catch {
           // Skip malformed JSON lines
           continue;
@@ -168,18 +202,42 @@ export class RestoreStream {
       const { value, done } = await this.reader.read();
       if (done) {
         this.done = true;
+        this.eofReached = true;
         // Process any remaining buffer content
         if (this.buffer.trim()) {
           try {
-            return JSON.parse(this.buffer.trim()) as StreamMessage;
+            const msg = JSON.parse(this.buffer.trim()) as StreamMessage;
+            this.buffer = '';
+            this.noteTerminal(msg);
+            return msg;
           } catch {
+            this.assertNotTruncated();
             return null;
           }
         }
+        this.assertNotTruncated();
         return null;
       }
 
       this.buffer += this.decoder.decode(value, { stream: true });
+    }
+  }
+
+  private noteTerminal(msg: StreamMessage): void {
+    if (msg.type === 'complete' || msg.type === 'error') {
+      this.sawTerminal = true;
+    }
+  }
+
+  // The server always ends the stream with a terminal 'complete' or 'error'
+  // event. EOF without one means the connection was dropped mid-operation
+  // (e.g. by a proxy), so the operation's outcome is unknown and must not be
+  // reported as success.
+  private assertNotTruncated(): void {
+    if (this.eofReached && !this.sawTerminal) {
+      throw new Error(
+        'Stream ended without a terminal "complete" or "error" event; the connection may have been dropped before the operation finished'
+      );
     }
   }
 
