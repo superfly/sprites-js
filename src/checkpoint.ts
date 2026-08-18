@@ -12,6 +12,10 @@ export class CheckpointStream {
   private decoder = new TextDecoder();
   private buffer = '';
   private done = false;
+  private sawTerminal = false;
+  private eofReached = false;
+  private cancelled = false;
+  private truncationReported = false;
 
   constructor(response: Response) {
     if (!response.body) {
@@ -23,9 +27,13 @@ export class CheckpointStream {
   /**
    * Read the next message from the stream
    * @returns The next message, or null if the stream is complete
+   * @throws When the stream ends without a terminal `complete` or `error`
+   * event: the connection was dropped before the operation finished, so the
+   * outcome is unknown. Thrown at most once, and not after `close()`.
    */
   async next(): Promise<StreamMessage | null> {
     if (this.done) {
+      this.assertNotTruncated();
       return null;
     }
 
@@ -42,7 +50,9 @@ export class CheckpointStream {
         }
 
         try {
-          return JSON.parse(line) as StreamMessage;
+          const msg = JSON.parse(line) as StreamMessage;
+          this.noteTerminal(msg);
+          return msg;
         } catch {
           // Skip malformed JSON lines
           continue;
@@ -58,18 +68,47 @@ export class CheckpointStream {
       const { value, done } = await this.reader.read();
       if (done) {
         this.done = true;
+        this.eofReached = true;
         // Process any remaining buffer content
-        if (this.buffer.trim()) {
+        const tail = this.buffer.trim();
+        this.buffer = '';
+        if (tail) {
           try {
-            return JSON.parse(this.buffer.trim()) as StreamMessage;
+            const msg = JSON.parse(tail) as StreamMessage;
+            this.noteTerminal(msg);
+            return msg;
           } catch {
-            return null;
+            // Malformed tail; fall through to the truncation check
           }
         }
+        this.assertNotTruncated();
         return null;
       }
 
       this.buffer += this.decoder.decode(value, { stream: true });
+    }
+  }
+
+  // Tracks whether the most recent message was terminal, as an assignment
+  // rather than a latch: a terminal event only counts if it is the last event
+  // before EOF, so a non-fatal mid-stream 'error' event followed by more
+  // messages does not disable truncation detection.
+  private noteTerminal(msg: StreamMessage): void {
+    this.sawTerminal = msg.type === 'complete' || msg.type === 'error';
+  }
+
+  // The server always ends the stream with a terminal 'complete' or 'error'
+  // event. EOF without one means the connection was dropped mid-operation
+  // (e.g. by a proxy), so the operation's outcome is unknown and must not be
+  // reported as success. The error is thrown at most once, and not when the
+  // caller cancelled the stream via close(); later next() calls return null
+  // per the documented contract.
+  private assertNotTruncated(): void {
+    if (this.eofReached && !this.sawTerminal && !this.cancelled && !this.truncationReported) {
+      this.truncationReported = true;
+      throw new Error(
+        'Stream ended without a terminal "complete" or "error" event; the connection may have been dropped before the operation finished'
+      );
     }
   }
 
@@ -92,6 +131,10 @@ export class CheckpointStream {
    * Close the stream
    */
   close(): void {
+    // Mark the cancellation before reader.cancel(): a pending read() resolves
+    // as done when the reader is cancelled, and must not be mistaken for a
+    // truncated stream.
+    this.cancelled = true;
     if (this.reader) {
       this.reader.cancel().catch(() => {});
       this.reader = null;
@@ -122,6 +165,10 @@ export class RestoreStream {
   private decoder = new TextDecoder();
   private buffer = '';
   private done = false;
+  private sawTerminal = false;
+  private eofReached = false;
+  private cancelled = false;
+  private truncationReported = false;
 
   constructor(response: Response) {
     if (!response.body) {
@@ -133,9 +180,13 @@ export class RestoreStream {
   /**
    * Read the next message from the stream
    * @returns The next message, or null if the stream is complete
+   * @throws When the stream ends without a terminal `complete` or `error`
+   * event: the connection was dropped before the operation finished, so the
+   * outcome is unknown. Thrown at most once, and not after `close()`.
    */
   async next(): Promise<StreamMessage | null> {
     if (this.done) {
+      this.assertNotTruncated();
       return null;
     }
 
@@ -152,7 +203,9 @@ export class RestoreStream {
         }
 
         try {
-          return JSON.parse(line) as StreamMessage;
+          const msg = JSON.parse(line) as StreamMessage;
+          this.noteTerminal(msg);
+          return msg;
         } catch {
           // Skip malformed JSON lines
           continue;
@@ -168,18 +221,47 @@ export class RestoreStream {
       const { value, done } = await this.reader.read();
       if (done) {
         this.done = true;
+        this.eofReached = true;
         // Process any remaining buffer content
-        if (this.buffer.trim()) {
+        const tail = this.buffer.trim();
+        this.buffer = '';
+        if (tail) {
           try {
-            return JSON.parse(this.buffer.trim()) as StreamMessage;
+            const msg = JSON.parse(tail) as StreamMessage;
+            this.noteTerminal(msg);
+            return msg;
           } catch {
-            return null;
+            // Malformed tail; fall through to the truncation check
           }
         }
+        this.assertNotTruncated();
         return null;
       }
 
       this.buffer += this.decoder.decode(value, { stream: true });
+    }
+  }
+
+  // Tracks whether the most recent message was terminal, as an assignment
+  // rather than a latch: a terminal event only counts if it is the last event
+  // before EOF, so a non-fatal mid-stream 'error' event followed by more
+  // messages does not disable truncation detection.
+  private noteTerminal(msg: StreamMessage): void {
+    this.sawTerminal = msg.type === 'complete' || msg.type === 'error';
+  }
+
+  // The server always ends the stream with a terminal 'complete' or 'error'
+  // event. EOF without one means the connection was dropped mid-operation
+  // (e.g. by a proxy), so the operation's outcome is unknown and must not be
+  // reported as success. The error is thrown at most once, and not when the
+  // caller cancelled the stream via close(); later next() calls return null
+  // per the documented contract.
+  private assertNotTruncated(): void {
+    if (this.eofReached && !this.sawTerminal && !this.cancelled && !this.truncationReported) {
+      this.truncationReported = true;
+      throw new Error(
+        'Stream ended without a terminal "complete" or "error" event; the connection may have been dropped before the operation finished'
+      );
     }
   }
 
@@ -202,6 +284,10 @@ export class RestoreStream {
    * Close the stream
    */
   close(): void {
+    // Mark the cancellation before reader.cancel(): a pending read() resolves
+    // as done when the reader is cancelled, and must not be mistaken for a
+    // truncated stream.
+    this.cancelled = true;
     if (this.reader) {
       this.reader.cancel().catch(() => {});
       this.reader = null;

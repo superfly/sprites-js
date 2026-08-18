@@ -25,7 +25,7 @@ describe('checkpoint and restore streams', () => {
     });
 
     it(`${name} processes all messages and can be closed`, async () => {
-      const stream = new Stream(streamResponse(['{"type":"info","data":"one"}\n{"type":"info","data":"two"}\n']));
+      const stream = new Stream(streamResponse(['{"type":"info","data":"one"}\n{"type":"complete","data":"two"}\n']));
       const messages: string[] = [];
       await stream.processAll(message => { messages.push(message.data!); });
       assert.deepEqual(messages, ['one', 'two']);
@@ -35,6 +35,61 @@ describe('checkpoint and restore streams', () => {
 
     it(`${name} rejects responses without a body`, () => {
       assert.throws(() => new Stream(new Response(null)), /Response has no body/);
+    });
+
+    it(`${name} accepts a terminal event without a trailing newline`, async () => {
+      const stream = new Stream(streamResponse(['{"type":"info","data":"one"}\n{"type":"complete","data":"done"}']));
+      const messages: string[] = [];
+      await stream.processAll(message => { messages.push(message.type); });
+      assert.deepEqual(messages, ['info', 'complete']);
+    });
+
+    it(`${name} throws when the stream ends without a terminal event`, async () => {
+      const stream = new Stream(streamResponse(['{"type":"info","data":"one"}\n{"type":"info","data":"two"}\n']));
+      await assert.rejects(stream.processAll(() => {}), /without a terminal/);
+    });
+
+    it(`${name} throws when an empty stream ends`, async () => {
+      const stream = new Stream(streamResponse([]));
+      await assert.rejects(stream.processAll(() => {}), /without a terminal/);
+    });
+
+    it(`${name} throws when the stream ends with a malformed tail`, async () => {
+      const stream = new Stream(streamResponse(['{"type":"info","data":"one"}\n{"type":"comp']));
+      await assert.rejects(stream.processAll(() => {}), /without a terminal/);
+    });
+
+    it(`${name} surfaces truncation through async iteration`, async () => {
+      const stream = new Stream(streamResponse(['{"type":"info","data":"one"}\n']));
+      await assert.rejects(async () => {
+        for await (const message of stream) void message;
+      }, /without a terminal/);
+    });
+
+    it(`${name} does not treat a mid-stream error event as terminal`, async () => {
+      const stream = new Stream(streamResponse(['{"type":"error","error":"advisory"}\n{"type":"info","data":"still going"}\n']));
+      await assert.rejects(stream.processAll(() => {}), /without a terminal/);
+    });
+
+    it(`${name} throws the truncation error only once, then returns null`, async () => {
+      const stream = new Stream(streamResponse(['{"type":"info","data":"one"}\n']));
+      assert.equal((await stream.next())?.type, 'info');
+      await assert.rejects(stream.next(), /without a terminal/);
+      assert.equal(await stream.next(), null);
+    });
+
+    it(`${name} does not throw after close() between reads`, async () => {
+      const stream = new Stream(streamResponse(['{"type":"info","data":"one"}\n']));
+      assert.equal((await stream.next())?.type, 'info');
+      stream.close();
+      assert.equal(await stream.next(), null);
+    });
+
+    it(`${name} does not throw when close() cancels a pending next()`, async () => {
+      const stream = new Stream(new Response(new ReadableStream({ start() {} })));
+      const pending = stream.next();
+      stream.close();
+      assert.equal(await pending, null);
     });
   }
 });

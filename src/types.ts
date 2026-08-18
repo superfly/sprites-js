@@ -599,7 +599,7 @@ export interface Checkpoint {
  */
 export interface StreamMessage {
   /** Message type */
-  type: 'info' | 'stdout' | 'stderr' | 'error';
+  type: 'info' | 'stdout' | 'stderr' | 'error' | 'complete';
   /** Message data */
   data?: string;
   /** Error message */
