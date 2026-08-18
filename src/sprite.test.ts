@@ -46,10 +46,10 @@ describe('Sprite public interface', () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const responses = [
       json({ sessions: [{ id: 'session-1', command: 'bash', workdir: '/app', created: '2026-07-20T10:00:00Z', bytes_per_second: 12.5, is_active: true, last_activity: '2026-07-20T10:01:00Z', tty: true }] }),
-      new Response('{"type":"info","data":"saving"}\n'),
+      new Response('{"type":"info","data":"saving"}\n{"type":"complete","data":"Checkpoint v1 created"}\n'),
       json([{ id: 'v1', create_time: '2026-07-20T10:00:00Z', comment: 'first', history: ['Current'], is_auto: true }]),
       json({ id: 'v1', create_time: '2026-07-20T10:00:00Z', comment: 'first', history: [], is_auto: true }),
-      new Response('{"type":"info","data":"restoring"}\n'),
+      new Response('{"type":"info","data":"restoring"}\n{"type":"complete","data":"Restore from v1 complete"}\n'),
     ];
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: input.toString(), init });

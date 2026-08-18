@@ -12,6 +12,14 @@ const sprite = client.sprite(spriteName);
 
 const stream = await sprite.restoreCheckpoint(checkpointId);
 
-for await (const msg of stream) {
-  console.log(JSON.stringify(msg));
+try {
+  for await (const msg of stream) {
+    console.log(JSON.stringify(msg));
+  }
+} catch (err) {
+  // The stream throws if the connection drops before the server sends its
+  // terminal 'complete' or 'error' event: the restore's outcome is unknown,
+  // so check the sprite's state before assuming the restore finished.
+  console.error(`Restore outcome unknown: ${err}`);
+  process.exit(1);
 }
