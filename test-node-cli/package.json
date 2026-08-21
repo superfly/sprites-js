@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsc && chmod +x dist/index.js",
     "watch": "tsc --watch",
+    "test": "npm run build && node --test dist/**/*.test.js",
     "clean": "rm -rf dist"
   },
   "devDependencies": {

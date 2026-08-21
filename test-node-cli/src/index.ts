@@ -8,6 +8,7 @@
 import { createWriteStream } from 'node:fs';
 import { WriteStream } from 'node:fs';
 import { SpritesClient } from '../../dist/index.js';
+import { consumeCheckpointEvents } from './checkpoint-events.js';
 
 interface CLIOptions {
   baseUrl: string;
@@ -254,9 +255,7 @@ async function handleCheckpointCommand(
           process.exit(1);
         }
         const stream = await sprite.createCheckpoint(args[1]);
-        for await (const event of stream) {
-          console.log(JSON.stringify(event));
-        }
+        await consumeCheckpointEvents(stream);
         break;
       }
       case 'restore': {
@@ -265,9 +264,7 @@ async function handleCheckpointCommand(
           process.exit(1);
         }
         const stream = await sprite.restoreCheckpoint(args[1]);
-        for await (const event of stream) {
-          console.log(JSON.stringify(event));
-        }
+        await consumeCheckpointEvents(stream);
         break;
       }
       default:
