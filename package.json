@@ -1,7 +1,7 @@
 {
   "name": "@fly/sprites",
   "version": "0.1.0-dev",
-  "description": "JavaScript/TypeScript SDK for Sprites - remote command execution",
+  "description": "JavaScript and TypeScript SDK for Fly.io Sprites: computers for agents. Node-style APIs for creating Sprites, running remote commands, moving files, and managing checkpoints.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -26,11 +26,13 @@
   },
   "keywords": [
     "sprites",
-    "exec",
-    "remote",
-    "command",
-    "websocket",
-    "child_process"
+    "fly-io",
+    "ai-agents",
+    "agent-sandbox",
+    "sandbox",
+    "microvm",
+    "remote-execution",
+    "checkpoint-restore"
   ],
   "author": "Fly.io",
   "license": "MIT",
