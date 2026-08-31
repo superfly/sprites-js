@@ -90,4 +90,37 @@ describe('SpriteFilesystem public interface', () => {
     assert.equal(await fs.exists('missing'), false);
     await fs.rm('missing', { force: true });
   });
+
+  it('maps a 404 without a structured code to ENOENT', async () => {
+    // The server currently omits the `code` field on 404 responses, e.g.
+    // reading a file that does not exist.
+    globalThis.fetch = (async () => new Response(
+      JSON.stringify({ error: 'open /app/missing.txt: no such file or directory', path: '/app/missing.txt' }),
+      { status: 404, headers: { 'content-type': 'application/json' } }
+    )) as typeof fetch;
+    const fs = new SpritesClient('token').sprite('demo').filesystem('/app');
+
+    await assert.rejects(
+      () => fs.readFile('missing.txt'),
+      (error: unknown) => error instanceof FilesystemError && error.code === 'ENOENT' && error.syscall === 'read'
+    );
+  });
+
+  it('maps a non-JSON 404 to ENOENT and other codeless failures to UNKNOWN', async () => {
+    globalThis.fetch = (async () => new Response('not found', { status: 404 })) as typeof fetch;
+    const fs = new SpritesClient('token').sprite('demo').filesystem('/app');
+    await assert.rejects(
+      () => fs.readFile('missing.txt'),
+      (error: unknown) => error instanceof FilesystemError && error.code === 'ENOENT'
+    );
+
+    globalThis.fetch = (async () => new Response(
+      JSON.stringify({ error: 'boom', path: '/app/f' }),
+      { status: 500, headers: { 'content-type': 'application/json' } }
+    )) as typeof fetch;
+    await assert.rejects(
+      () => fs.readFile('f'),
+      (error: unknown) => error instanceof FilesystemError && error.code === 'UNKNOWN'
+    );
+  });
 });

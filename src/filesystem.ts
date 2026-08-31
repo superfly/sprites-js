@@ -122,6 +122,16 @@ function parseErrorCode(serverCode?: string): FilesystemErrorCode {
 }
 
 /**
+ * Map an HTTP status to a filesystem error code for responses whose body
+ * carries no structured `code` field. The server currently omits `code` on
+ * 404 responses (for example, reading a file that does not exist), which
+ * would otherwise surface as `UNKNOWN` instead of `ENOENT`.
+ */
+function statusErrorCode(status: number): FilesystemErrorCode {
+  return status === 404 ? 'ENOENT' : 'UNKNOWN';
+}
+
+/**
  * Join path segments, handling absolute paths
  */
 function joinPath(base: string, ...parts: string[]): string {
@@ -177,13 +187,15 @@ export class SpriteFilesystem {
     } catch {
       throw createError(
         `${syscall} failed with status ${response.status}`,
-        'UNKNOWN',
+        statusErrorCode(response.status),
         path,
         syscall
       );
     }
 
-    const code = parseErrorCode(errorData.code);
+    const code = errorData.code
+      ? parseErrorCode(errorData.code)
+      : statusErrorCode(response.status);
     throw createError(
       errorData.error || `${syscall} failed`,
       code,
