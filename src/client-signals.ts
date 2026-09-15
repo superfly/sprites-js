@@ -3,7 +3,7 @@ import {
   detectOnce,
   headersFor,
   userAgentSuffix,
-} from '@fly/client-signals';
+} from '../vendor/client-signals/src/index.js';
 
 const DISABLE_VALUES = new Set(['0', 'off', 'false', 'no', 'disabled']);
 // package.json sits outside rootDir, so it cannot be imported. Bundlers that

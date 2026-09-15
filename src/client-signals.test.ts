@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { KNOWN_MARKERS, resetCachedForTest } from '@fly/client-signals';
+import { KNOWN_MARKERS, resetCachedForTest } from '../vendor/client-signals/src/index.js';
 import { authHeaders, resetSignalHeadersForTest, signalHeaders } from './client-signals.js';
 
 const originalSignalsSetting = process.env.SPRITES_CLIENT_SIGNALS;

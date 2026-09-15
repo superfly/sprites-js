@@ -7,14 +7,14 @@ This is the JavaScript implementation from
 The JavaScript implementation is not published to npm. Vendoring it inside
 `@fly/sprites` is the supported distribution model. The runtime source and
 TypeScript declarations are unmodified; the package metadata is adapted for
-bundling and carries the upstream Apache-2.0 license.
+vendoring and carries the upstream Apache-2.0 license.
 
-`@fly/sprites` ships this directory two ways: npm resolves the dependency from
-the bundled `node_modules` copy, and the `files` entry keeps `vendor/` in the
-tarball so the `file:vendor/client-signals` specifier still resolves under
-package managers that handle `bundledDependencies` differently.
+`@fly/sprites` includes this directory in its tarball through the `files`
+entry and imports the runtime directly by relative path. No separate package
+installation is required. This avoids depending on how package managers
+restore a bundled `file:` dependency from a consumer lockfile.
 
 To update the snapshot, copy the runtime and declarations from a reviewed
-upstream release, update the release link above, and keep the local dependency,
-`bundledDependencies`, and `files` entries in sync. Then run the full test
+upstream release, update the release link above, and keep the `files` entry
+and relative imports in sync. Then run the full test
 suite and verify that the packed `@fly/sprites` tarball installs offline.
