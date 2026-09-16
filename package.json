@@ -40,6 +40,7 @@
     "type": "git",
     "url": "https://github.com/superfly/sprites-js.git"
   },
+  "homepage": "https://fly.io/sprites/",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
