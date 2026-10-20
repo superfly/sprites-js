@@ -4,7 +4,7 @@ import * as api from './index.js';
 import { SpritesClient } from './client.js';
 import { ControlConnection, OpConn } from './control.js';
 import { SpriteCommand } from './exec.js';
-import { APIError, StreamID } from './types.js';
+import { APIError, ExecError, StreamID } from './types.js';
 
 const originalWebSocket = globalThis.WebSocket;
 const originalFetch = globalThis.fetch;
@@ -421,6 +421,38 @@ describe('SpriteCommand and Sprite execution interfaces', () => {
       () => sprite.execFileHTTP('cat', [], { timeout: -1 }),
       /timeout must be a non-negative finite number/
     );
+  });
+
+  // Each string is one reader.read(), the way a proxy or HTTP/2 can merge chunks.
+  function installHTTPExecBody(...reads: string[]): void {
+    globalThis.fetch = (async () => new Response(new ReadableStream({ start(controller) {
+      for (const read of reads) controller.enqueue(Buffer.from(read, 'latin1'));
+      controller.close();
+    } }))) as typeof fetch;
+  }
+
+  for (const { name, reads, stdout = '', stderr = '', exitCode = 0 } of [
+    { name: 'stdout and exit in one read', reads: ['\x01traced\n\x03\x00'], stdout: 'traced\n' },
+    // No length prefix, so the second frame's id byte stays in the output.
+    { name: 'two stdout frames in one read', reads: ['\x01foo\n\x01bar\n\x03\x00'], stdout: 'foo\n\x01bar\n' },
+    { name: 'a stderr error and exit 1 in one read', reads: ['\x02sprite stopped\n\x03\x01'], stderr: 'sprite stopped\n', exitCode: 1 },
+    { name: 'an exit in its own read', reads: ['\x01out\n', '\x02err\n', '\x03\x07'], stdout: 'out\n', stderr: 'err\n', exitCode: 7 },
+  ]) {
+    it(`parses HTTP exec output with ${name}`, async () => {
+      installHTTPExecBody(...reads);
+      const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+      const result = await sprite.execFileHTTP('cat').catch(err => {
+        if (err instanceof ExecError) return err.result;
+        throw err;
+      });
+      assert.deepEqual(result, { stdout, stderr, exitCode });
+    });
+  }
+
+  it('rejects an HTTP exec body that ends without an exit frame', async () => {
+    installHTTPExecBody('\x01partial');
+    const sprite = new SpritesClient('token', { baseURL: 'https://example.test' }).sprite('demo');
+    await assert.rejects(() => sprite.execFileHTTP('cat'), /did not include an exit frame/);
   });
 
   it('uses structured API errors for session-kill failures', async () => {

@@ -9,7 +9,7 @@ import { WSCommand } from './websocket.js';
 import type { Sprite } from './sprite.js';
 import type { SpawnOptions, ExecOptions, ExecResult } from './types.js';
 import type { HTTPExecOptions, SessionKillEvent } from './types.js';
-import { ExecError } from './types.js';
+import { ExecError, StreamID } from './types.js';
 import { parseAPIError } from './types.js';
 import { NDJSONStream } from './ndjson.js';
 
@@ -455,37 +455,55 @@ export async function execFileHTTP(
   let stderrLength = 0;
   let exitCode = -1;
   const maxBuffer = options.maxBuffer || 10 * 1024 * 1024;
+  // Frames have no length prefix, so each read is taken to start a frame and
+  // frames merged mid-read can't be split. The exit frame is always the body's
+  // last 2 bytes, so hold back each read's last 2 bytes and decide at the end.
+  let stream = StreamID.Stdout;
+  let held = new Uint8Array(0);
+  const write = (data: Uint8Array) => {
+    if (!data.length) return;
+    if (stream === StreamID.Stdout) {
+      stdoutLength += data.length;
+      if (stdoutLength > maxBuffer) throw new Error('stdout maxBuffer exceeded');
+      stdout.push(Buffer.from(data));
+    } else {
+      stderrLength += data.length;
+      if (stderrLength > maxBuffer) throw new Error('stderr maxBuffer exceeded');
+      stderr.push(Buffer.from(data));
+    }
+  };
   const reader = response.body.getReader();
   try {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
       if (!value?.length) continue;
+      write(held);
+      held = new Uint8Array(0);
       const frameType = value[0];
-      const payload = Buffer.from(value.subarray(1));
-      if (frameType === 1) {
-        stdoutLength += payload.length;
-        if (stdoutLength > maxBuffer) throw new Error('stdout maxBuffer exceeded');
-        stdout.push(payload);
-      } else if (frameType === 2) {
-        stderrLength += payload.length;
-        if (stderrLength > maxBuffer) throw new Error('stderr maxBuffer exceeded');
-        stderr.push(payload);
-      } else if (frameType === 3) {
-        if (payload.length !== 1) {
+      if (frameType === StreamID.Exit) {
+        if (value.length !== 2) {
           throw new Error(
-            `Invalid HTTP exec exit frame length ${payload.length}; ` +
+            `Invalid HTTP exec exit frame length ${value.length - 1}; ` +
             'the server protocol requires preserved HTTP chunk boundaries'
           );
         }
-        exitCode = payload[0] ?? 255;
-      } else {
+        exitCode = value[1];
+        continue;
+      }
+      if (frameType !== StreamID.Stdout && frameType !== StreamID.Stderr) {
         throw new Error(
           `Unsupported HTTP exec frame type 0x${frameType.toString(16).padStart(2, '0')}; ` +
           'the server protocol requires preserved HTTP chunk boundaries'
         );
       }
+      stream = frameType;
+      const split = Math.max(1, value.length - 2);
+      write(value.subarray(1, split));
+      held = value.subarray(split);
     }
+    if (held.length === 2 && held[0] === StreamID.Exit) exitCode = held[1];
+    else write(held);
     if (exitCode < 0) throw new Error('HTTP exec response did not include an exit frame');
   } finally {
     await reader.cancel().catch(() => undefined);
