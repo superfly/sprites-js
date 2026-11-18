@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
 import { afterEach, describe, it } from 'node:test';
 import { KNOWN_MARKERS, resetCachedForTest } from '@fly/client-signals';
 import { authHeaders, resetSignalHeadersForTest, signalHeaders } from './client-signals.js';
@@ -19,6 +20,36 @@ afterEach(() => {
   }
   resetCachedForTest();
   resetSignalHeadersForTest();
+});
+
+describe('SDK version', () => {
+  // Tests run from dist/, one level below the package manifest.
+  const manifest = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8')
+  ) as { version: string };
+
+  it('is the version in the package manifest', () => {
+    process.env.SPRITES_CLIENT_SIGNALS = 'off';
+    resetSignalHeadersForTest();
+
+    assert.equal(signalHeaders()['User-Agent'], `sprites-js/${manifest.version}`);
+  });
+
+  it('is compiled in, so the SDK loads from a bundle with no manifest beside it', () => {
+    const here = new URL('.', import.meta.url);
+    const runtimeModules = readdirSync(here).filter(
+      name => name.endsWith('.js') && !name.endsWith('.test.js')
+    );
+    assert.ok(runtimeModules.includes('client-signals.js'));
+
+    for (const name of runtimeModules) {
+      assert.doesNotMatch(
+        readFileSync(new URL(name, here), 'utf8'),
+        /package\.json/,
+        `${name} reads the package manifest at runtime`
+      );
+    }
+  });
 });
 
 describe('client signals', () => {
