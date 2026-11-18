@@ -59,7 +59,9 @@ export async function updateNetworkPolicy(
     throw new Error(`Invalid policy: ${body}`);
   }
 
-  if (response.status !== 204) {
+  // Success is 204 on some Sprite runtimes and 200 with the stored policy on
+  // others.
+  if (!response.ok) {
     const body = await response.text();
     throw new Error(
       `Failed to update network policy (status ${response.status}): ${body}`
