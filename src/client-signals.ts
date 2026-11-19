@@ -1,15 +1,11 @@
-import { createRequire } from 'node:module';
 import {
   detectOnce,
   headersFor,
   userAgentSuffix,
 } from '@fly/client-signals';
+import { VERSION } from './version.js';
 
 const DISABLE_VALUES = new Set(['0', 'off', 'false', 'no', 'disabled']);
-// package.json sits outside rootDir, so it cannot be imported. Bundlers that
-// drop package.json from their output will need to shim this read.
-const require = createRequire(import.meta.url);
-const { version } = require('../package.json') as { version: string };
 
 let cachedHeaders: Readonly<Record<string, string>> | undefined;
 
@@ -20,7 +16,7 @@ function disabled(): boolean {
 }
 
 function computeHeaders(): Readonly<Record<string, string>> {
-  const userAgent = `sprites-js/${version}`;
+  const userAgent = `sprites-js/${VERSION}`;
   if (disabled()) return { 'User-Agent': userAgent };
 
   const signals = detectOnce();

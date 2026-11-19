@@ -15,6 +15,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
+    "prebuild": "node scripts/write-version.mjs",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "watch": "tsc --watch",
